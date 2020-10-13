@@ -739,11 +739,10 @@ sub printReport{
 	my $cdata = shift ;
 	my $ofile = shift ;
 	my $tdata = shift ;
-	my @terrainDensity = (75, 70, 65,60,55,50,45,40) ;
 	#	print Dumper $tdata ;
 	#return 0;
 	open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
-	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),List of CBGs\n" ;
+	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better,clusterweighted), List of CBGs\n" ;
 	print "Processing counties..." ;
 	my ($totalArea,$totalTowers,$totalTowers2,$totalCbgArea) ;
 	$totalArea = $totalTowers = $totalTowers2 = $totalCbgArea = 0 ;
@@ -767,18 +766,19 @@ sub printReport{
 			#printf "area = %.4g..", $$poly->area ;
 			$terrainCode{$$aoi{'name'}} = $$tdata{$$aoi{'name'}}{'terrainType'} ;
 			{
-				my $tc = $terrainDensity[$terrainCode{$$aoi{'name'}}] ;
+				my $tc = $terrainCode{$$aoi{'name'}} ;
 				my $cellDensity = 68.24  - 0.166*$tc ;
 				my $cellDensity2 = 66.12 - 0.279*$tc ;
+				print "$$aoi{'name'}: Terrain code $tc, celldensity=$cellDensity, celldensity2 = $cellDensity2 " ;
 				if ($cellDensity2 > $cellDensity) { $cellDensity2 = $cellDensity ; }
 				if ($cellDensity == 0 || $cellDensity2 == 0) { die "terrain=$terrainCode{$$aoi{'name'}} cname = $cname aoi = $$aoi{'name'} density=$cellDensity\n" ; }
-				my $aoiTower = int(($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity) ;
-				if ($aoiTower < 1) { $aoiTower = 1;}
+				printf "area=%.4g ",($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}}) ;
+				my $aoiTower = ((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity)) ;
 				$towers{$$aoi{'name'}} += $aoiTower ;
 
-				$aoiTower = int(($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity2) ;
-				if ($aoiTower < 1) { $aoiTower = 1;}
-				$towers2{$$aoi{'name'}} += $aoiTower ;
+				my $aoiTower2 =((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity2)) ;
+				$towers2{$$aoi{'name'}} += $aoiTower2 ;
+				print "aoiTower=$aoiTower aoiTower2=$aoiTower2\n" ;
 			}
 		}
 
@@ -797,15 +797,37 @@ sub printReport{
 				$cbgClusterHoleArea += $aoiHoleArea{$cbg} ;
 				$twrs += $towers{$cbg};
 				$twrs2 += $towers2{$cbg};
-				$weightedTerrainCode += $terrainCode{$cbg}*$aoiArea{$cbg} ;
+				$weightedTerrainCode += $terrainCode{$cbg}*($aoiArea{$cbg} - $aoiHoleArea{$cbg})  ;
+				print "$cbg -> $terrainCode{$cbg}, area=$aoiArea{$cbg} hole=$aoiHoleArea{$cbg} " ;
 			}
+			$twrs = int(0.5+$twrs) ; if ($twrs < 1) { $twrs = 1 ; }
+			$twrs2 = int(0.5+$twrs2) ; if ($twrs2 < 1) { $twrs2 = 1 ; }
+			print "weighted = $weightedTerrainCode " ;
 			$weightedTerrainCode = int($weightedTerrainCode/$cbgClusterArea) ;
+			print "normalized = $weightedTerrainCode\n" ;
+			my ($ctwrs,$ctwrs2) ;
+			{
+				my $clusterCellDensity = 68.24  - 0.166*$weightedTerrainCode ;
+				my $clusterCellDensity2 = 66.12 - 0.279*$weightedTerrainCode ;
+				if ($clusterCellDensity2 < $clusterCellDensity) {
+					$clusterCellDensity = $clusterCellDensity ;
+				}
+				$ctwrs = int(0.5 + ($clusterarea/$clusterCellDensity)) ;
+				$ctwrs2 = int(0.5 + ($clusterarea/$clusterCellDensity2)) ;
+				if ($ctwrs < 1) { $ctwrs = 1 } ;
+				if ($ctwrs2 < 1) { $ctwrs2 = 1 } ;
+				printf "Cluster level:cluster area:%.6g, clusterdensities=%.4g %.4g ",
+					$clusterarea, $clusterCellDensity, $clusterCellDensity2,
+				print "towers: $ctwrs $ctwrs2, $twrs,$twrs2\n" ;
+			}
 			my $pc = int(100.0*($cbgClusterArea - $cbgClusterHoleArea)/$clusterarea) ; 
-			printf FREP "%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,",
+			printf FREP "%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,%d,%d,",
 				$cname,$$cid{'name'},
 				$clusterarea,$cbgClusterArea,$cbgClusterHoleArea,
-				$pc,$weightedTerrainCode,$twrs,$twrs2;
+				$pc,$weightedTerrainCode,$twrs,$twrs2,$ctwrs,$ctwrs2;
 			print FREP "$ostring\n" ;
+			if ($ctwrs < $twrs) { $twrs = $ctwrs ; }
+			if ($ctwrs2 < $twrs2) { $twrs2 = $ctwrs2 ; }
 			$totalArea += $clusterarea ;
 			$totalCbgArea += $cbgClusterArea ;
 			$totalTowers += $twrs ;
@@ -814,7 +836,8 @@ sub printReport{
 	}
 	print "\n";
 	print FREP "Consolidated: Towers(all coverage) = $totalTowers, Towers(64QAM and better)=$totalTowers2,Area = $totalArea,CBG Area = $totalCbgArea\n" ;
-	print "Consolidated: Towers(all coverage) = $totalTowers, Towers(64QAM and better)=$totalTowers2,Area = $totalArea,CBG Area = $totalCbgArea\n" ;
+	printf "Consolidated: Towers(all coverage)=%d, Towers(64QAM and better)=%d, Area=%.6g, CBG Area=%.6g\n",
+       	$totalTowers,$totalTowers2,$totalArea,$totalCbgArea ;
 	close(FREP) ;
 }
 

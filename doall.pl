@@ -20,6 +20,13 @@ print "Printing usage\n" ;
 	HELP_MESSAGE() ;
 exit(1) ;
 }
+my $lh ;
+if ($opt_l eq "-") {
+	$lh = *STDOUT ;
+}
+else {
+	open ($lh, '>', "$opt_l") || die "Can't open $opt_l for writing:$!\n" ; 
+}
 my @clusterfiles ;
 opendir(DIR, $opt_d) || die "Can't open directory $opt_d:$!\n" ;
 if (-d $opt_C) {
@@ -61,7 +68,18 @@ while (my $fname = readdir(DIR)) {
 		while (<SH>) {
 			chomp ;
 			if (/Couldn't find/) { print "$_\n" ; }
-			/^Consolidated:(.*)$/ && do {$cons{$state} = $1 ; } ;
+			/^Consolidated:(.*)$/ && do {
+				my $ln = $1 ;
+				my @lflds = split /[=,\s]/, $ln;
+				my %stateDetails ;
+				$stateDetails{'towers'} = $lflds[3] ;
+				$stateDetails{'towersDense'} = $lflds[8] ;
+				$stateDetails{'Area'} = $lflds[11] ;
+				$stateDetails{'CbGArea'} = $lflds[15] ;
+				$cons{$state} = \%stateDetails ; 
+			} ;
+
+#		print "Consolidated: Towers(all coverage)=%d, Towers(64QAM and better)=%d, Area=%.6g, CBG Area=%.6g\n",
 	#	/State.*xmin=([-0-9.]+).*xmax=([-0-9.]+).*ymin=([-0-9.]+).*ymax=([-0-9.]+)/ &&
 	#		do {
 	#			if ($opt_b) { print FH "$state,$1,$2,$3,$4\n" ;  }
@@ -72,15 +90,21 @@ while (my $fname = readdir(DIR)) {
 }
 close (FH) ;
 
-my $lh ;
-if ($opt_l eq "-") {
-	$lh = *STDOUT ;
-}
-else {
-	open ($lh, '>', "$opt_l") || die "Can't open $opt_l for writing:$!\n" ; 
-}
+my $first = 1;
 foreach my $st (sort keys %cons) {
-	print $lh "$st: $cons{$st}\n" ;
+	my %det = %{$cons{$st}} ;
+	if ($first) {
+		foreach my $tdk (sort keys %det) {
+			print $lh "$tdk " ;
+		}
+		print $lh "\n" ;
+		$first = 0;
+	}
+	print $lh "$st " ;
+	foreach my $stdk (sort keys %det) {
+		print $lh "$det{$stdk} " ;
+	}
+	print $lh "\n" ;
 }
 
 sub HELP_MESSAGE {
