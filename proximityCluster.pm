@@ -189,8 +189,10 @@ sub weightedCentroid {
 		$tw += $area ;
 		$np++ ;
 	}
+	if ($tw != 0) { 
 	$txy[0] = $txy[0]/($tw) ;
 	$txy[1] = $txy[1]/($tw) ;
+	}
 	#printf "Weighted Centroid:%.4g %.4g\n",$txy[0],$txy[1] ;
 	return \@txy ;
 }

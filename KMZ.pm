@@ -5,7 +5,7 @@ require Exporter ;
 use strict;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(makeNewOutlineStyle makeNewSolidStyle makeNewCluster makeNewPolygon makeNewDescription makeNewFolder makeNewClusterFromPlacemark) ;
+our @EXPORT = qw(makeNewOutlineStyle makeNewSolidStyle makeNewPolygon makeNewDescription makeNewFolder makeNewClusterFromPlacemark makeNewFile) ;
 
 
 sub polygonToArray {
@@ -195,4 +195,21 @@ sub makeNewFolder {
 	$snippet{'_'} = '' ;
 	$snippet{'maxLines'} = 2 ;
 	$$folder{'Snippet'} = \%snippet ;
+}
+
+sub makeNewFile {
+	my $data = shift ;
+	my $fname = shift ;
+	my $opkml = Geo::KML->new(version => '2.2.0') ;
+	if ($fname =~ /.*[.]kmz$/) {
+		print "Writing to kmz file $fname\n" ;
+		$opkml->writeKML($data,$fname,1) ;
+	}
+	elsif ($fname =~ /.*[.]kml$/) {
+		print "Writing to kml file $fname\n" ;
+		$opkml->writeKML($data,$fname) ;
+	}
+	else {
+		print "Don't understand file type for $fname\n" ;
+	}
 }

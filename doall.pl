@@ -11,10 +11,11 @@ our $opt_D = "processed/" ;
 our $opt_w = "" ;
 our $opt_K = "proximity3.5" ;
 our $opt_C = "";
+our $opt_c = "";
 our $opt_l = "-" ;
 my %cons ;
 $Getopt::Std::STD_HELP_VERSION = 1 ;
-getopts('d:D:hw:K:C:l:') ;
+getopts('d:D:hw:K:c:C:l:') ;
 if ($opt_h) {
 print "Printing usage\n" ; 
 	HELP_MESSAGE() ;
@@ -29,8 +30,8 @@ else {
 }
 my @clusterfiles ;
 opendir(DIR, $opt_d) || die "Can't open directory $opt_d:$!\n" ;
-if (-d $opt_C) {
-	opendir (CDIR, $opt_C) || die "Can't open directory $opt_D for cluster files:$!\n" ; 
+if (-d $opt_c) {
+	opendir (CDIR, $opt_c) || die "Can't open directory $opt_D for cluster files:$!\n" ; 
 	while (my $rname = readdir(CDIR) ) {
 		next unless ($rname =~ /([A-Z]){2}[a-z]+.csv/) ;
 		push @clusterfiles,$rname ;
@@ -45,23 +46,24 @@ while (my $fname = readdir(DIR)) {
 	my $rfile = $opt_D . $1."report.csv" ;
 	my $tfile = $opt_D . $1."terrain.csv" ;
 	my $cfile = $1 . "cluster.csv" ;
-	my $wfile ;
-	if ($opt_w eq "") { $wfile = $opt_d . "CBG_Short_List_v1.csv" ; }
-	elsif (-e $opt_w) { $wfile = $opt_w ; }
-	else { die "Provided whitelist file $opt_w doesn't exist\n" ; }
 
 	#print "Executing $fname...$ofile\n" ;
 	my $estring = "" ;
 	foreach my $cf (@clusterfiles) {
 		if ($cfile eq $cf) {
-			my $fcf = $opt_C . "/" . $cf ;
+			my $fcf = $opt_c . "/" . $cf ;
 			$estring = "./kmz.pl -f ". $opt_d . $fname . " -k " . $ofile . " -r " . $rfile . " -K $fcf";
 		}
 	}
 	if ($estring eq "") {
 		$estring = "./kmz.pl -f ". $opt_d . $fname . " -k " . $ofile . " -r " . $rfile . " -K $opt_K";
 	}
-	$estring .= " -w " . $wfile . " 2>&1 |";
+	if ($opt_C ne "" ) { $estring .= " -C $opt_C " ; }
+	if ($opt_w ) {
+		if ((-e $opt_w)) { $estring .= " -w " . $opt_w ; }
+		else { die "$opt_w doesn't exist!\n" ; }
+	}
+	$estring .= " 2>&1 |";
 	print "$estring\n" ;
 	#	system($estring) ;
 		open (SH, "$estring") || die "Can't open $estring\n" ;
@@ -109,7 +111,7 @@ foreach my $st (sort keys %cons) {
 
 sub HELP_MESSAGE {
 print STDERR <<EOH
-Usage: doall.pl -d <directory to read kmz files from> -D <directory to write processed files to> -K <default clustering> -C <directory of cluster files> -w <whitelist file> -l <logfile>
+Usage: doall.pl -d <directory to read kmz files from> -D <directory to write processed files to> -K <default clustering> -c <directory of cluster files> -w <whitelist file> -l <logfile> -C (pass through to kmz.pl)
 EOH
 ;
 }

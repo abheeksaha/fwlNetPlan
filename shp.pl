@@ -1,72 +1,35 @@
 #!/usr/bin/perl
 #
-
-
-use strict ;
-use Getopt::Std ;
-use Geo::KML ;
-use Data::Dumper ;
+use strict;
+use Getopt::Std;
+use Geo::ShapeFile ;
+use Geo::ShapeFile::Shape ;
+use Geo::ShapeFile::Point ;
 use XML::LibXML ;
 use Math::Polygon ;
+use Math::Polygon::Convex qw/chainHull_2D/ ;
 use KMZ ;
 use cvxPolygon;
 use nlcd;
-
+use Data::Dumper ;
 $Data::Dumper::Indent = 1;
 my $milesperlat = 69 ;
 my $milesperlong = 54.6 ; 
-my $prompt = 1;
-
-
 our $opt_f = "" ;
-our $opt_k = "" ;
-our $opt_r = "sampleReport.csv" ;
-our $opt_K = "proximity3" ;
-our $opt_h ;
-our $opt_p = 0 ;
-our $opt_t = "" ;
 our $opt_w = "" ;
-our $opt_C = "" ;
-getopts('f:k:r:K:hw:C:') ;
-if ($opt_h) {
-	HELP_MESSAGE() ;
-	exit(1) ;
-}
-my @colors = (0xffff0000, 0xff00ff00, 0xff0000ff, 0xffaa3333, 0xff33aa22,0xff00cccc, 0xff22cc22, 0xff22aacc) ;
-my @polycolors = (0xfffff8dc, 0xffffe4c4, 0xfff5deb3, 0xffd2b48c, 0xff90ed90,0xffadff2f, 0xff32cd32, 0xff228b22) ;
-my %pmlistentry ;
-my $noclustering = 0;
+our $opt_K = "proximity3" ;
+our $opt_r = "" ;
+our $opt_s = "" ;
+our $opt_h = 0 ;
+getopts('s:f:r:K:w:h') ;
 
-#
-# We need a file to load
-#
-my $statename = "" ;
-if ($opt_f eq "") {
+if ($opt_h) {
 	HELP_MESSAGE() ;
 	die ;
 }
-else {
-	if ($opt_f =~ m@.*/([A-Z]{2}).kmz@) {
-		$statename = $1 ;
-	}
-	else {
-		print "No Statename\n" ;
-	}
 
-	open(F1,$opt_f) || die "Can't open file $opt_f\n" ; 
-	if ($opt_k eq "") {
-		($opt_f =~ m@.*([A-Z]{2}).kmz@) && 
-			do {
-				$opt_k = $1 . "mod.kmz" ; 
-				print "output kmz file=$opt_k\n"; 
-			} ;
-	}
-}
-if ($opt_K eq "no") {
-	$noclustering = 1 ;
-}
 my (@whitelist,@wlist) ;
-if ($opt_w) {
+if ($opt_w ne "") {
 	open (WL,$opt_w) || die "Can't open $opt_w for whitelist reading\n" ;
 	while (<WL>) {
 		chomp ;
@@ -80,87 +43,52 @@ if ($opt_w) {
 	print "$nw entries loaded\n" ;
 }
 
-if ($opt_p) { $prompt = 0 ; }
-
-srand($$) ;
-
-# 
-# Process the file and load placemarks. Each Placemark is a CBG
-# The county information is in the description
-#
-print "Opening $opt_f for processing...\n" ;
-my ($ns,$data) = Geo::KML->readKML($opt_f) ;
-my $dhash = %$data{'Document'} ;
-#for (keys %$dhash) {
-#	print "Key $_: Value $$dhash{$_}\n" ;
-#print Dumper $data ;
-#die "Dead!\n" ;
-$$dhash{'name'} = $statename ;
-my $featuregroup = $$dhash{'AbstractFeatureGroup'} ;
-my $stylegroup = $$dhash{'AbstractStyleSelectorGroup'} ;
-
-my $EPS = 0.001 ;
-my $totalArea = 0 ;
-my $aoiCtr=0;
-my $cxavg = 0 ;
-my $cyavg = 0 ;
-my @placemarkhashes;
-my $placemarks = 0;
-my @featureref ;
-my $featurecnt = 0 ;
-foreach my $fg (@$featuregroup) {
-	for my $fkey (keys %$fg) {
-		print "Key $fkey: Value $$fg{$fkey}\n" ;
-		next unless ($fkey eq 'Folder') ;
-		my $fder = %$fg{$fkey} ;
-		for my $fderkey (keys %$fder) {
-			print "Folder Key $fderkey: Value $$fder{$fderkey}\n" ;
-			if ($fderkey eq "name") {
-				$$fder{$fderkey} = "Not in whitelist" ;
-			}
-			if ($fderkey eq "description") {
-				$$fder{$fderkey} = $statename. ":CBGs which are not featured in the whitelist" ;
-			}
-			next unless ($fderkey eq 'AbstractFeatureGroup') ;
-			$featureref[$featurecnt]  = $$fder{'AbstractFeatureGroup'} ;
-			foreach my $fcount (@{$featureref[$featurecnt]})
-			{
-				for my $fcntkey (keys %$fcount) {
-					#					print "Feature Key $fcntkey: Value $$fcount{$fcntkey}\n" ;
-					if ($fcntkey eq 'Placemark') { 
-						%pmlistentry = %$fcount ; 
-						push @placemarkhashes,$$fcount{$fcntkey} ; $placemarks++; 
-					}
-				}
-			}
-			$featurecnt++ ;
-		}
-		
-	}
-}
-print "$placemarks Placemarks found, $featurecnt Features found\n" ;
-
-
-use Math::Polygon::Convex qw/chainHull_2D/ ;
+my $shapefile = Geo::ShapeFile->new($opt_f, {no_cache => 1});
+print "loaded Shapefile!\n" ;
 
 my @counties ;
 my %countydata ;
 my %terrainData ;
-# 
-# Now convert placemarks into polygons
-#
-foreach my $pref (@placemarkhashes) {
-	my $countyAoiCtr = 0;
-	my $geometries = $$pref{'MultiGeometry'}{'AbstractGeometryGroup'} ;
-	my $description = $$pref{'description'} ;
-	if ($opt_w && !whiteListed(\@whitelist,$$pref{'name'})) {
-		foreach my $geomkey (@$geometries) {
-			undef $$geomkey{'Polygon'}{'altitudeMode'} ;
+ 
+
+#  note that IDs are 1-based
+
+my $totalArea = 0 ;
+my $aoiCtr = 0;
+foreach my $id (1 .. $shapefile->shapes()) {
+	my $shape = $shapefile->get_shp_record($id);
+# see Geo::ShapeFile::Shape docs for what to do with $shape
+	my %db = $shapefile->get_dbf_record($id);
+	next unless ($opt_s eq "" || ($db{'state_abbr'} eq $opt_s))  ;
+	my $record = $shapefile->get_shp_record($id) ;
+	my ($np,$npt,$st) ;
+	$np = $record->num_parts ;
+	$npt = $record->num_points ;
+	$st = $record->shape_type ;
+	printf "Record has %d parts, %d points is of type %s ", $np, $npt, $st ;
+
+	my @pcoords ;
+	my $nxt = 0;
+  	for(1 .. $record->num_parts) {
+  		my $part = $record->get_part($_);
+		my @points = $record->points() ;
+		foreach my $pt (@points) {
+			my @xy ;
+			$xy[0] = $pt->get_x();
+			$xy[1] = $pt->get_y() ;
+			@pcoords[$nxt++] = \@xy ;
 		}
+	}
+	print "(Loaded $nxt points) " ;
+
+
+  # ... do something here, draw a map maybe
+	print "county $db{'county'} cbg = $db{'cbg_id'}\n" ;
+	if ($opt_w && !whiteListed(\@whitelist,$db{'cbg_id'})) {
 		next ;
 	}
 
-	my ($county,$new) = getCounty($description,\@counties) ;
+	my $county = $db{'county'} ;
 	print "County $county\n" ;
 	if (!defined %countydata{$county}) {
 		push @counties, $county;
@@ -176,8 +104,8 @@ foreach my $pref (@placemarkhashes) {
 		$data{'centroid'} = \$aoiCtr ;
 		$data{'clusters'} = \@clusters ; 
 		$countydata{$county} = \%data ;
+		print "Created new county $county\n" ;
 	}
-	my @pcoords ;
 	my @polygonlist ;
 	my $nxtp=0;
 
@@ -185,30 +113,7 @@ foreach my $pref (@placemarkhashes) {
 	my $cx = $countydata{$county}{'cx'} ;
 	my $cy = $countydata{$county}{'cy'} ;
 	my $countyAoiCtr = $countydata{$county}{'centroid'};
-	my @polyholes ;
 	my $holearea = 0;
-	foreach my $geomkey (@$geometries) {
-		my $coordinates = $$geomkey{'Polygon'}{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} ;
-		my @plist = arrayToPolygon($coordinates) ;
-		splice @pcoords,@pcoords,0,@plist ;
-		$polygonlist[$nxtp++] = Math::Polygon->new(@plist) ;
-		if (defined($$geomkey{'Polygon'}{'innerBoundaryIs'})) {
-			my $holes = $$geomkey{'Polygon'}{'innerBoundaryIs'} ;
-			my $nh  = @$holes ;
-			if ($nh) { 
-				print "Found $nh holes in $$pref{'name'}: " ;
-				foreach my $hole (@$holes) {
-					my $hp = Math::Polygon->new(arrayToPolygon($$hole{'LinearRing'}{'coordinates'})) ;
-					printf "hole of area %.4g, ", $hp->area * $milesperlat * $milesperlong ;
-					push @polyholes,$hp ;
-					$holearea += $hp->area() * $milesperlat * $milesperlong ;
-				}
-				print "\n" ;
-			}
-		}
-		undef $$geomkey{'Polygon'}{'altitudeMode'} ;
-	#{ print "coordinate string: $$geomkey{'Polygon'}{'outerBoundaryIs'}{'LinearRing'}{'coordinates'}\n" ; }
-	}
 	#
 	# Close the pcoords
 	# 
@@ -220,15 +125,12 @@ foreach my $pref (@placemarkhashes) {
 		}
 	}
 	my $nxtaoi = chainHull_2D @pcoords ;
-	#	my $nxtaoi = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@polygonlist)) ;
 	$nxtaoi->simplify() ;
 	my $pcnt = $nxtaoi->nrPoints ;
 	my $parea = $nxtaoi->area()*$milesperlat*$milesperlong ;
 	$parea -= $holearea ;
 	printf "Converted placemark to convex hull of %d points, area = %.4g (closed=%d) ", $pcnt,$parea,$nxtaoi->isClosed() ;
-	my $numholes = @polyholes ;
-	print "Found $numholes holes\n" ; 
-	next unless ($parea > $EPS) ;
+	#next unless ($parea > $EPS) ;
 	next unless ($nxtaoi->isClosed()) ;
 	my $center =  $nxtaoi->centroid() ;
 	($$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]) = @$center ;
@@ -236,7 +138,7 @@ foreach my $pref (@placemarkhashes) {
 	{
 			my %histogram ;
 			my $npts = int($nxtaoi->area()*$milesperlat*$milesperlong)+1 ;
-			print "Calling samplehistogram with $npts points for placemark $$pref{'name'}:" ;
+			print "Calling samplehistogram with $npts points for placemark $db{'cbg_id'}:" ;
 			nlcd::sampleHistogram($nxtaoi,$npts*100,\%histogram) ;
 			#my $totalrange = @polycolors ;
 			my $tcode = getTerrainCodeFromHistogram(\%histogram,100); 
@@ -245,16 +147,26 @@ foreach my $pref (@placemarkhashes) {
 			print "$tdata{'terrainType'}\n" ;
 	}
 	$tdata{'area'} = $parea  ;
-	$terrainData{$$pref{'name'}} = \%tdata ;
+	$terrainData{$db{'cbg_id'}} = \%tdata ;
 		
 		
 	#print " centroid=$$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]\n" ; 
-	my %aoihash = ( 'name' => $$pref{'name'} , 'polygon' => \$nxtaoi, 'holes' => \@polyholes ) ;
+	my %aoihash = ( 'name' => $db{'cbg_id'} , 'polygon' => \$nxtaoi) ;
 	push @$listofAois,\%aoihash ;
 	$totalArea += $parea ;
-	$$countyAoiCtr++ ;
 	$aoiCtr++ ;
 }
+srand($$) ;
+
+# 
+# Process the file and load placemarks. Each Placemark is a CBG
+# The county information is in the description
+#
+use Math::Polygon::Convex qw/chainHull_2D/ ;
+
+# 
+# Now convert placemarks into polygons
+#
 print "$aoiCtr AOIs recorded, total area of $totalArea: " ;
 for my $cname (keys %countydata) {
 	my $pc = $countydata{$cname}{'aois'};
@@ -293,11 +205,6 @@ foreach my $cn (keys %countydata)
 		print "Trying Proximity clustering for $cn ($thresh) \n" ;
 		($clusters[$nc],$tclusters[$nc]) = 
 			aoiClustersProximity($countydata{$cn}{'aois'},$thresh) ;
-			die unless (prompt(\$prompt) == 1) ;
-	}
-	elsif ($noclustering == 1) {
-		($clusters[$nc],$tclusters[$nc]) =
-			aoiNoClustering($countydata{$cn}{'aois'}) ;
 	}
 	elsif (-e $opt_K) {
 		($clusters[$nc],$tclusters[$nc]) = 
@@ -311,61 +218,9 @@ foreach my $cn (keys %countydata)
 	print "$tclusters[$nc] clusters returned (total=$numclusters)\n" ;
 	$nc++ ;
 }
-my $nc = 0;
-my $clr ;
-foreach my $stylehash (@$stylegroup) {
-	for (keys %$stylehash) {
-		print "Key $_: Value $$stylehash{$_}\n" ;
-		my $st = $$stylehash{'Style'} ;
-		my $ps = $$st{'PolyStyle'} ;
-		$clr = $$ps{'color'} ;
-		printf "Current colour = %x\n" , $clr ;
-	}
-	$nc++;
-}
-print "Found $nc styles\n" ;
-my $oldnc = $nc ;
-$nc = 0;
-# 
-# Create new styles, to be allocated randomly to clusters
-#
-for ($nc = 0; $nc<@colors; $nc++){
-	print "Adding new style $nc\n" ;
-	my %newstyle ;
-	my %newst = makeNewOutlineStyle($nc,$colors[$nc]) ;
-	$newstyle{'Style'} = \%newst ;
-	push @$stylegroup, \%newstyle ;
-}
-# 
-# Create new terrain styles, to be allocated randomly to clusters
-#
-for ($nc = 0; $nc<@polycolors; $nc++){
-	print "Adding new style $nc\n" ;
-	my %newstyle ;
-	my %newst = makeNewSolidStyle($nc,$polycolors[$nc],192,1) ;
-	$newstyle{'Style'} = \%newst ;
-	push @$stylegroup, \%newstyle ;
-}
-#
-# Make a new grey style
-my (%greystyle,%greyst,$greyid) ;
-$greyid = @polycolors ;
-%greyst = makeNewSolidStyle($greyid,0xff7080240,240,0) ;
-$greystyle{'Style'} = \%greyst ;
-push @$stylegroup,\%greystyle ;
 
-my $newcn = $oldnc ;
-
-#
-# Now each cluster is enclosed in a single, convex polygon
-# All placemarks within the cluster are coloured the same.
-# We keep track using styleIdHash ;
-#
 my $i = 0;
-my @newfolders ;
-my %styleIdHash ;
-my $styleCounter = 0 ;
-my $fdrcnt = (1 - $noclustering) ;
+my $newcn = 0;
 foreach my $cn (keys %countydata)
 {
 	my @newclusters ;
@@ -385,11 +240,6 @@ foreach my $cn (keys %countydata)
 			foreach my $pref (@$preflist) {
 				if ($$pref{'name'} eq $pk) {
 					$pgon = $$pref{'polygon'} ;
-					my $listofHoles = $$pref{'holes'} ;
-					if (@$listofHoles) {
-						splice @hlist,@hlist,0,@$listofHoles;
-					}
-					$styleIdHash{$$pref{'name'}} = $styleCounter;
 					last ;
 				}
 			}
@@ -415,125 +265,13 @@ foreach my $cn (keys %countydata)
 		$cinf{'poly'} = $badclusterpoly ;
 		push @{$countydata{$cn}{'clusters'}} , \%cinf ;
 
-		my $description = makeNewDescription("Cluster $newcn, county $cn List of CBGs:$cliststring\n") ;
-		my $cstyle ;
-		my $newcluster ;
-		#		if ($noclustering == 0) {
-		#	$cstyle = sprintf("ClusterStyle%.3d",$newcn%@colors) ;
-		#	$newcluster = makeNewCluster($cn,$clusterpoly,$ccn,\@hlist,$cstyle,$description) ;
-		#}
-		#else 
-		{
-			my $cname ;
-			$cstyle = sprintf("TerrainStyle%.3d",$newcn%@polycolors) ;
-			# Find the pref and copy it into the cluster data ;
-			my @pmarkname = @{$clusters[$i]->{$newc}} ;
-			my @consolidatedPolygonList ;
-			if ($noclustering) {
-				$cname = sprintf("CBG_%s" , $cliststring) ;
-			}
-			else {
-				$cname = sprintf("%s/%s", $cn, $newc) ;
-			}
-			foreach my $pmark (@pmarkname) {
-				print "Moving $pmark to newcluster:" ;
-				my $found = -1 ;
-			#$newcluster = makeNewCluster($cn,$clusterpoly,$ccn,\@hlist,$cstyle,$description, $cname) ;
-				FOUND: for (my $fcount=0; $fcount < @{$featureref[0]}; $fcount++)
-				{
-					my $feature = ${$featureref[0]}[$fcount] ;
-					foreach my $fkey (%$feature) {
-						next unless ($fkey eq 'Placemark') ; 
-						my $placemark = $$feature{$fkey} ;
-						if (${$placemark}{'name'} eq $pmark) {
-							my %geometries = %{$$placemark{'MultiGeometry'}} ;
-							splice @consolidatedPolygonList,@consolidatedPolygonList,0,@{$geometries{'AbstractGeometryGroup'}} ;
-							$found = $fcount ;
-							print "found at $found, " ;
-							splice @{$featureref[0]}, $found,1 ;
-							my $nleft =@{$featureref[0]} ;
-							print "$nleft left\n" ;
-							last FOUND;
-						}
-					}
-				}
-				if ($found == -1){
-					die "Couldn't find $pmark!\n" ;
-				}
-			}
-			foreach my $plgn (@consolidatedPolygonList) {
-				undef $$plgn{'altitudeMode'} ;
-			}
-			$newcluster = makeNewClusterFromPlacemark($cn,\@consolidatedPolygonList,$ccn,$cstyle,$description,$cname) ;
-		}
-		push @newclusters, $newcluster ;
-		$newcn++ ; $ccn++ ; 
-		#printf("newcn -> $newcn\n") ;
-		$styleCounter++ ;
 	}
-	my $nclusters = @newclusters ;
-	print "Adding $nclusters for $cn\n" ; 
-	my %newfolder ; 
-	my %foldercontainer ;
-	makeNewFolder($cn,\@newclusters, \%newfolder, $fdrcnt++) ;
-	$foldercontainer{'Folder'} = \%newfolder ;
-	push @newfolders, \%foldercontainer ;
 	$i++ ;
 }
-#
-# Assign styles to placemarks
-#
-foreach my $pref (@placemarkhashes) {
-	#my $styleid = findInClusters($$pref{'name'},$clusters) ;
-	my $styleid ;
-	$styleid = $greyid;
-	#if ($opt_w && !whiteListed(\@whitelist,$$pref{'name'})) {
-	#	$styleid = $greyid ;
-	#}
-	#else {
-	#	#$styleid = $terrainData{$$pref{'name'}}{'terrainType'}%$nc;
-	#	$styleid = %styleIdHash{$$pref{'name'}}%$nc;
-	#}
-	next unless ($styleid != -1) ;
 
-	$$pref{'styleUrl'} = '#TerrainStyle' . sprintf("%.3d",$styleid) ;
-#		print "Changing style to $$pref{'styleUrl'}\n" ;
+if ($opt_r ne "") {
+	printReport(\%countydata,$opt_r,\%terrainData) ;
 }
-#splice @{$featureref[0]},@{$featureref[0]},0,@newclusters ;
-#splice @$featuregroup, @$featuregroup, @newfolders ;
-{
-	my $unassigned = @{$featureref[0]};
-	print "$unassigned unassigned (why?)\n" ;
-	#if ($opt_w eq "") {
-	#	splice @$featuregroup,0,1 ;
-	#}
-}
-
-
-{
-	unshift @$featuregroup, @newfolders ;
-	makeNewFile($data,$opt_k) ;
-}
-# Split on county basis if we need to
-if ($opt_C ne "") {
-	if (!(-d $opt_C)) {
-		print "ERROR! for County split mode -C should give op directory\n" ;
-		exit(5) ;
-	}
-	foreach my $fder (@newfolders) {
-		splice @$featuregroup,0 ;
-		unshift @$featuregroup,$fder ;
-		my $cname = $$fder{'Folder'}{'name'} ;
-		$cname =~ s/\s+/_/g ;
-		my $nfname = $opt_C . "/" . $statename . "_" . $cname . ".kml" ;
-		print "Writing folder for $nfname" ;
-		makeNewFile($data,$nfname) ;
-	}
-}
-#
-# printReport
-#
-printReport(\%countydata,$opt_r,\%terrainData) ;
 #
 # Last step. Dump the state bounding boxes on the screen
 
@@ -854,7 +592,7 @@ sub whiteListed {
 
 sub HELP_MESSAGE {
 print STDERR <<EOH
-Usage: kmz.pl -f <input kmz file> -k <output kmz file/dir> -r <report file>  -K <Kmeans/proximity/no> -C  (split into county specific files) 
+Usage: $0 -f <input shp file> -r <report file>  -K <Kmeans/proximity/no>  -s <two letter state abbr> -w <whitelist file>
 EOH
 ;
 }
