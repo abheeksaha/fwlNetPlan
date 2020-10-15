@@ -34,17 +34,20 @@ else {
 print "Loaded states @states \n" ;
 
 foreach my $st (@states) {
+	next unless ($st =~ /[A-Z]{2}/) ;
 	my $estring ;
 	my $recfile = $st . "record.csv" ;
+	my $kmzfile = $st . "mod.kmz" ;
 	if ($opt_d ne "") {
 		if (-d $opt_d) {
 			$recfile = $opt_d . "/" . $recfile ; 
+			$kmzfile = $opt_d . "/" . $kmzfile ; 
 		}
 		else {
 			die "$opt_d is not a directory!\n" ;
 		}
 	}
-	$estring = "./shp.pl -f $opt_f " ;
+	$estring = "./shp.pl -f $opt_f -k $kmzfile " ;
 	if ($opt_w ne "") {
 		$estring .= "-w $opt_w " ;
 	}

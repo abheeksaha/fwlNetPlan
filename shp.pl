@@ -21,8 +21,11 @@ our $opt_K = "proximity3" ;
 our $opt_r = "" ;
 our $opt_s = "" ;
 our $opt_h = 0 ;
-getopts('s:f:r:K:w:h') ;
+our $opt_k = "" ;
+my $noclustering = 0;
+getopts('s:f:r:K:w:hk:') ;
 
+my @polycolors = (0xfffff8dc, 0xffffe4c4, 0xfff5deb3, 0xffd2b48c, 0xff90ed90,0xffadff2f, 0xff32cd32, 0xff228b22) ;
 if ($opt_h) {
 	HELP_MESSAGE() ;
 	die ;
@@ -43,18 +46,27 @@ if ($opt_w ne "") {
 	print "$nw entries loaded\n" ;
 }
 
+if ($opt_K eq "no") {
+	$noclustering  = 1 ;
+}
+
 my $shapefile = Geo::ShapeFile->new($opt_f, {no_cache => 1});
-print "loaded Shapefile!\n" ;
+print STDERR "Loaded Shapefile!\n" ;
 
 my @counties ;
 my %countydata ;
 my %terrainData ;
+my @placemarks ;
+my @newfolders ;
+my @stylegroup;
+my $fdrcnt = 0 ;
  
 
 #  note that IDs are 1-based
 
 my $totalArea = 0 ;
 my $aoiCtr = 0;
+printf STDERR "Loaded %d shapes\n",$shapefile->shapes() ;
 foreach my $id (1 .. $shapefile->shapes()) {
 	my $shape = $shapefile->get_shp_record($id);
 # see Geo::ShapeFile::Shape docs for what to do with $shape
@@ -149,13 +161,21 @@ foreach my $id (1 .. $shapefile->shapes()) {
 	$tdata{'area'} = $parea  ;
 	$terrainData{$db{'cbg_id'}} = \%tdata ;
 		
+	my $desc = sprintf"%10s\n",$db{'ORIG_FID'};
+	my @holes ;
+	my ($pname,$pid) ;
+	$pname = $db{'cbg_id'} ;
+	$pid = sprintf("ID_%d",$db{'ORIG_FID'}) ;
+	my $pm = makeNewPlacemark($pname,$nxtaoi,\@holes,"",$pid,$desc) ;
+	push @placemarks,$pm;
 		
 	#print " centroid=$$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]\n" ; 
-	my %aoihash = ( 'name' => $db{'cbg_id'} , 'polygon' => \$nxtaoi) ;
+	my %aoihash = ( 'name' => $db{'cbg_id'} , 'polygon' => \$nxtaoi, 'fid' => $db{'ORIG_FID'}) ;
 	push @$listofAois,\%aoihash ;
 	$totalArea += $parea ;
 	$aoiCtr++ ;
 }
+printf " Pushed %d placemarks\n", @placemarks ;
 srand($$) ;
 
 # 
@@ -206,6 +226,10 @@ foreach my $cn (keys %countydata)
 		($clusters[$nc],$tclusters[$nc]) = 
 			aoiClustersProximity($countydata{$cn}{'aois'},$thresh) ;
 	}
+	elsif ($noclustering == 1) {
+		($clusters[$nc],$tclusters[$nc]) =
+			aoiNoClustering($countydata{$cn}{'aois'}) ;
+	}
 	elsif (-e $opt_K) {
 		($clusters[$nc],$tclusters[$nc]) = 
 			aoiLoadClusterFile($cn,$opt_K) ;
@@ -217,6 +241,15 @@ foreach my $cn (keys %countydata)
 	$numclusters += $tclusters[$nc] ;
 	print "$tclusters[$nc] clusters returned (total=$numclusters)\n" ;
 	$nc++ ;
+}
+
+# Prepare the styles
+for ($nc = 0; $nc<@polycolors; $nc++){
+	print "Adding new style $nc\n" ;
+	my %newstyle ;
+	my %newst = makeNewSolidStyle($nc,$polycolors[$nc],192,1) ;
+	$newstyle{'Style'} = \%newst ;
+	push @stylegroup, \%newstyle ;
 }
 
 my $i = 0;
@@ -265,12 +298,76 @@ foreach my $cn (keys %countydata)
 		$cinf{'poly'} = $badclusterpoly ;
 		push @{$countydata{$cn}{'clusters'}} , \%cinf ;
 
+		my $description = makeNewDescription("Cluster $newcn, county $cn List of CBGs:$cliststring\n") ;
+		my $cstyle ;
+		{
+			my $cname ;
+			$cstyle = sprintf("TerrainStyle%.3d",$newcn%@polycolors) ;
+			# Find the pref and copy it into the cluster data ;
+			my @pmarkname = @{$clusters[$i]->{$newc}} ;
+			my @consolidatedPolygonList ;
+			if ($noclustering) {
+				$cname = sprintf("CBG_%s" , $cliststring) ;
+			}
+			else {
+				$cname = sprintf("%s/%s", $cn, $newc) ;
+			}
+			foreach my $pmark (@pmarkname) {
+				print "Moving $pmark to newcluster:" ;
+				my $found = -1 ;
+				FOUND: for (my $fcount=0; $fcount < @placemarks; $fcount++)
+				{
+					my $plmark = $placemarks[$fcount] ;
+					if ($$plmark{'Placemark'}{'name'} eq $pmark) {
+						$found = $fcount ;
+						print "found at $found, " ;
+						#$$plmark{'Placemark'}{'styleUrl'} = $cstyle ;
+						my $pgons = $$plmark{'Placemark'}{'MultiGeometry'}{'AbstractGeometryGroup'} ;
+						splice @consolidatedPolygonList,@consolidatedPolygonList,0, @$pgons ;
+						splice @placemarks, $found,1 ;
+						my $nleft =@placemarks ;
+						print "$nleft left\n" ;
+						last FOUND;
+					}
+				}
+				if ($found == -1){
+					die "Couldn't find $pmark!\n" ;
+				}
+			}
+			my $newcluster = makeNewClusterFromPlacemark($cn,\@consolidatedPolygonList,$ccn,$cstyle,$description,$cname) ;
+			push @newclusters,$newcluster ;
+		}
+		$newcn++ ; $ccn++ ; 
+		#printf("newcn -> $newcn\n") ;
 	}
+	my $nclusters = @newclusters ;
+	print "Adding $nclusters placemarks for $cn\n" ; 
+	my %newfolder ; 
+	my %foldercontainer ;
+	makeNewFolder($cn,\@newclusters, \%newfolder, $fdrcnt++) ;
+	$foldercontainer{'Folder'} = \%newfolder ;
+	push @newfolders, \%foldercontainer ;
 	$i++ ;
 }
 
+if ($opt_k ne "") {
+	my $dhash ;
+	my ($nstyles,$nfolders) ;
+	$nstyles = @stylegroup ;
+	$nfolders = @newfolders;
+	print "$nstyles styles $nfolders folders\n" ;
+	if ($opt_s eq "") {
+		$dhash = makeNewDocument("Document",\@newfolders,\@stylegroup) ;
+	}
+	else {
+		$dhash = makeNewDocument($opt_s,\@newfolders,\@stylegroup) ;
+	}
+	makeNewFile($dhash,$opt_k) ;
+}
+
+
 if ($opt_r ne "") {
-	printReport(\%countydata,$opt_r,\%terrainData) ;
+	printReport(\%countydata,$opt_r,\%terrainData,$noclustering) ;
 }
 #
 # Last step. Dump the state bounding boxes on the screen
@@ -478,10 +575,19 @@ sub printReport{
 	my $cdata = shift ;
 	my $ofile = shift ;
 	my $tdata = shift ;
+	my $noclustering = shift ;
 	#	print Dumper $tdata ;
 	#return 0;
 	open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
-	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better,clusterweighted), List of CBGs\n" ;
+	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better,clusterweighted)," ;
+	if ($noclustering) {
+		print FREP "CBGID,FID\n" ; 
+	}
+	else {
+		print FREP "CBG List\n" ;
+	}
+
+
 	print "Processing counties..." ;
 	my ($totalArea,$totalTowers,$totalTowers2,$totalCbgArea) ;
 	$totalArea = $totalTowers = $totalTowers2 = $totalCbgArea = 0 ;
@@ -494,10 +600,12 @@ sub printReport{
 		my %towers;
 		my %towers2;
 		my %terrainCode ;
+		my %fid ;
 		for my $aoi (@$listofAois) {
 			#print "Name $$aoi{'name'}..." ;
 			my $poly = $$aoi{'polygon'} ;
 			my $holes = $$aoi{'holes'} ;
+			$fid{$$aoi{'name'}} = $$aoi{'fid'} ;
 			$aoiArea{$$aoi{'name'}} = $$poly->area * $milesperlat * $milesperlong ; 
 			foreach my $hole (@$holes) {
 				$aoiHoleArea{$$aoi{'name'}} += $hole->area * $milesperlat * $milesperlong ;
@@ -524,6 +632,7 @@ sub printReport{
 		for my $cid (@$clist) {
 			my $clusterarea = $milesperlat*$milesperlong*$$cid{'poly'}->area() ;
 			my $ostring = "" ;
+			my $fstring = "" ;
 			my $cbgClusterArea = 0 ; 
 			my $cbgClusterHoleArea = 0 ; 
 			my $twrs = 0;
@@ -531,7 +640,12 @@ sub printReport{
 			my $weightedTerrainCode= 0 ;
 			my $cbglist = $$clusterlist{$$cid{'name'}} ;
 			for my $cbg (@$cbglist) {
-				$ostring .= "$cbg:" ;
+
+				if ($ostring eq "") { $ostring = $cbg ; }
+				else { $ostring .= ":".$cbg ; }
+				if ($fstring eq "") { $fstring = $fid{$cbg} ; }
+				else { $fstring .= ":".$fid{$cbg} ; }
+
 				$cbgClusterArea += $aoiArea{$cbg} ; 
 				$cbgClusterHoleArea += $aoiHoleArea{$cbg} ;
 				$twrs += $towers{$cbg};
@@ -564,7 +678,9 @@ sub printReport{
 				$cname,$$cid{'name'},
 				$clusterarea,$cbgClusterArea,$cbgClusterHoleArea,
 				$pc,$weightedTerrainCode,$twrs,$twrs2,$ctwrs,$ctwrs2;
-			print FREP "$ostring\n" ;
+			if ($noclustering) { print FREP "$ostring,$fstring\n" ; }
+			else {print FREP "$ostring\n" ; }
+
 			if ($ctwrs < $twrs) { $twrs = $ctwrs ; }
 			if ($ctwrs2 < $twrs2) { $twrs2 = $ctwrs2 ; }
 			$totalArea += $clusterarea ;
@@ -592,7 +708,7 @@ sub whiteListed {
 
 sub HELP_MESSAGE {
 print STDERR <<EOH
-Usage: $0 -f <input shp file> -r <report file>  -K <Kmeans/proximity/no>  -s <two letter state abbr> -w <whitelist file>
+Usage: $0 -f <input shp file> -r <report file>  -K <Kmeans/proximity/no>  -s <two letter state abbr> -w <whitelist file> -k <op kmz file>
 EOH
 ;
 }

@@ -3,10 +3,11 @@ package KMZ;
 
 require Exporter ;
 use strict;
+use Geo::KML ;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(makeNewOutlineStyle makeNewSolidStyle makeNewPolygon makeNewDescription makeNewFolder makeNewClusterFromPlacemark makeNewFile) ;
-
+our @EXPORT = qw(makeNewOutlineStyle makeNewSolidStyle makeNewPolygon makeNewPlacemark makeNewDescription makeNewFolder 
+makeNewClusterFromPlacemark makeNewDocument makeNewFile) ; 
 
 sub polygonToArray {
 	my $plist = shift ;
@@ -96,15 +97,14 @@ sub makeNewClusterFromPlacemark{
 	return \%newcluster ;
 }
 
-sub makeNewCluster{
-	my $county = shift ;
+sub makeNewPlacemark{
+	my $clustername = shift ;
 	my $clusterpoly = shift ;
-	my $newcn = shift ;
 	my $listofHoles = shift ;
-	my $styleid = shift || sprintf("ClusterStyle%.3d",$newcn) ;
+	my $styleid = shift  ;
+	my $id = shift ;
 	my $desc = shift || "Empty string\n" ;
-	my $clustername = shift || sprintf "%s/Cluster_%d", $county, $newcn ;
-	my %newcluster ;
+	my %newplacemark ;
 	my $polygoncoords  = makeNewPolygon($clusterpoly) ;
 	my %placemark ;
 	my %polygon ;
@@ -112,7 +112,7 @@ sub makeNewCluster{
 	$placemark{'name'} = $clustername ;
 	$placemark{'styleUrl'} = "#".$styleid ;
 	$placemark{'description'} = $desc; 
-	$placemark{'id'} = sprintf("ClusterID_%d",$newcn)  ;
+	$placemark{'id'} = $id  ;
 
 	$polygon{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} = $polygoncoords ;
 	$polygon{'extrude'} = 0 ;
@@ -135,11 +135,9 @@ sub makeNewCluster{
 		$holegeom{'Polygon'} = \%innerB ;
 		push @polygons,\%holegeom ;
 	}
-
-
 	$placemark{'MultiGeometry'}{'AbstractGeometryGroup'} = \@polygons ;
-	$newcluster{'Placemark'} = \%placemark ;
-	return \%newcluster ;
+	$newplacemark{'Placemark'} = \%placemark ;
+	return \%newplacemark ;
 }
 
 sub makeNewPolygon{
@@ -195,6 +193,24 @@ sub makeNewFolder {
 	$snippet{'_'} = '' ;
 	$snippet{'maxLines'} = 2 ;
 	$$folder{'Snippet'} = \%snippet ;
+}
+
+sub makeNewDocument {
+	my $name = shift ;
+	my $flist = shift ;
+	my $slist = shift ;
+	my %doc ;
+	my %details;
+	my %snippet ;
+	$details{'name'} = $name ;
+	$snippet{'maxLines'} = 2 ;
+	$details{'Snippet'} = \%snippet ;
+	$details{'id'} = $name ;
+	$details{'AbstractFeatureGroup'} = $flist ;
+	$details{'AbstractStyleSelectorGroup'} = $slist ;
+	$doc{'Document'} = \%details ;
+	return \%doc ;
+
 }
 
 sub makeNewFile {

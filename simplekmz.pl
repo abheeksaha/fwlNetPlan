@@ -62,9 +62,6 @@ else {
 			} ;
 	}
 }
-if ($opt_K eq "no") {
-	$noclustering = 1 ;
-}
 my (@whitelist,@wlist) ;
 if ($opt_w) {
 	open (WL,$opt_w) || die "Can't open $opt_w for whitelist reading\n" ;
@@ -93,8 +90,6 @@ my ($ns,$data) = Geo::KML->readKML($opt_f) ;
 my $dhash = %$data{'Document'} ;
 #for (keys %$dhash) {
 #	print "Key $_: Value $$dhash{$_}\n" ;
-#print Dumper $data ;
-#die "Dead!\n" ;
 $$dhash{'name'} = $statename ;
 my $featuregroup = $$dhash{'AbstractFeatureGroup'} ;
 my $stylegroup = $$dhash{'AbstractStyleSelectorGroup'} ;
@@ -128,6 +123,21 @@ foreach my $fg (@$featuregroup) {
 				for my $fcntkey (keys %$fcount) {
 					#					print "Feature Key $fcntkey: Value $$fcount{$fcntkey}\n" ;
 					if ($fcntkey eq 'Placemark') { 
+						my $pref = $$fcount{$fcntkey} ;
+						my $geometries = $$pref{'MultiGeometry'}{'AbstractGeometryGroup'} ;
+						foreach my $geomkey (@$geometries) {
+							my $coordinates = $$geomkey{'Polygon'}{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} ;
+							splice @$coordinates,1,@$coordinates - 1 ;
+							if (defined ($$geomkey{'Polygon'}{'innerBoundaryIs'})) {
+								my $holes = $$geomkey{'Polygon'}{'innerBoundaryIs'};
+								my $nh = @$holes ;
+								foreach my $hl (@$holes) {
+									my $thole = $$hl{'LinearRing'}{'coordinates'} ;
+									splice @$thole,1,@$thole - 1 ;
+								}
+								print "Found $nh holes!\n" ;
+							}
+						}
 						%pmlistentry = %$fcount ; 
 						push @placemarkhashes,$$fcount{$fcntkey} ; $placemarks++; 
 					}
@@ -139,6 +149,8 @@ foreach my $fg (@$featuregroup) {
 	}
 }
 print "$placemarks Placemarks found, $featurecnt Features found\n" ;
+print Dumper $data ;
+exit(1) ;
 
 
 use Math::Polygon::Convex qw/chainHull_2D/ ;
