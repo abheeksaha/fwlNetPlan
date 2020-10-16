@@ -1,0 +1,28 @@
+Site Name,Latitude,Longitude,Site Enabled,Device Name,Device Type,Max Power (dBm),Misc Loss (dB),Antenna Type,Mechanical Azimuth (deg),Mechanical Downtilt (deg),Electrical Downtilt (deg),Antenna Height AGL (m),Beamforming Gain (dB),LTE PDSCH Offset (dB),Cell Load (%)
+new site,0.0000000,0.0000000,true,,,,,,,,,,,,
+new site,32.3379102,-95.2425385,true,New Device 2,Outdoor,47,0,AW3161,-110,0,0,55,0,0,50
+new site,32.3379102,-95.2425385,true,New Device 1,Outdoor,47,0,AW3161,23,0,0,45,0,0,50
+new site,32.3379102,-95.2425385,true,New Device 3,Outdoor,47,0,AW3161,146,0,0,55,0,0,50
+new site,32.3689430,-95.4519653,true,New Device 3,Outdoor,47,0,AW3161,0,0,0,60,0,0,50
+new site,32.3689430,-95.4519653,true,New Device 1,Outdoor,47,0,AW3161,82,0,0,70,0,0,50
+new site,32.3689430,-95.4519653,true,New Device 2,Outdoor,47,0,AW3161,-150,5,0,50,0,0,50
+new site,32.5033920,-95.0241852,true,New Device 1,Outdoor,47,0,AW3161,-157,0,0,40,0,0,50
+new site,32.3098772,-95.0513935,true,New Device 3,Outdoor,47,0,AW3161,-71,0,0,60,0,0,50
+new site,32.3098772,-95.0513935,true,New Device 2,Outdoor,47,0,AW3161,9,0,0,70,0,0,50
+new site,32.3098772,-95.0513935,true,New Device 1,Outdoor,47,0,AW3161,175,0,0,50,0,0,50
+new site,32.5462344,-95.5494690,true,New Device 2,Outdoor,47,0,AW3161,174,0,0,60,0,0,50
+new site,32.5462344,-95.5494690,true,New Device 1,Outdoor,47,0,AW3161,17,0,0,50,6,0,50
+new site (copy 1),32.5091827,-95.2267456,true,New Device 3,Outdoor,47,0,AW3161,0,0,0,50,0,0,50
+new site (copy 1),32.3109291,-95.3400421,true,New Device 1,Outdoor,47,0,AW3161,-4,1,0,60,6,0,50
+new site (copy 1),32.3109291,-95.3400421,true,New Device 2,Outdoor,47,0,AW3161,141,0,0,40,6,0,50
+new site (copy 1),32.1812063,-95.0491619,true,New Device 1,Outdoor,47,0,AW3161,127,1,0,60,0,0,50
+new site (copy 1),32.1812063,-95.0491619,true,New Device 2,Outdoor,47,0,AW3161,-55,1,0,65,0,0,50
+new site (copy 1),32.5091827,-95.2267456,true,New Device 2,Outdoor,47,0,AW3161,99,0,0,40,0,0,50
+new site (copy 1),32.5091827,-95.2267456,true,New Device 1,Outdoor,47,0,AW3161,-123,1,0,60,0,0,50
+new site (copy),32.1674754,-95.2276897,true,New Device 1,Outdoor,47,0,AW3161,104,1,0,60,0,0,50
+new site (copy),32.1674754,-95.2276897,true,New Device 2,Outdoor,47,0,AW3161,-110,1,0,65,0,0,50
+new site (copy),32.4969494,-95.3881073,true,New Device 2,Outdoor,47,0,AW3161,141,0,0,40,6,0,50
+new site (copy),32.4969494,-95.3881073,true,New Device 1,Outdoor,47,0,AW3161,-38,1,0,60,6,0,50
+new site (copy),32.4969494,-95.3881073,true,New Device 3,Outdoor,47,0,AW3161,48,0,0,50,0,0,50
+new site (copy),32.2260531,-95.4385757,true,New Device 2,Outdoor,47,0,AW3161,-9,0,0,80,6,0,50
+new site (copy),32.2260531,-95.4385757,true,New Device 2,Outdoor,47,0,AW3161,173,1,0,90,6,0,50
