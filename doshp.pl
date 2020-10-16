@@ -97,6 +97,7 @@ foreach my $tdk (sort keys %tot) {
 	print "$tdk -> $tot{$tdk} ";
 }
 print "\n" ;
+exit(1) ;
 
 sub HELP_MESSAGE {
 print STDERR <<EOH

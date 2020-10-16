@@ -12,7 +12,7 @@ our $opt_w = "" ;
 our $opt_K = "proximity3.5" ;
 our $opt_C = "";
 our $opt_c = "";
-our $opt_l = "-" ;
+our $opt_l = "doall.log" ;
 my %cons ;
 $Getopt::Std::STD_HELP_VERSION = 1 ;
 getopts('d:D:hw:K:c:C:l:') ;
@@ -26,6 +26,10 @@ if ($opt_l eq "-") {
 	$lh = *STDOUT ;
 }
 else {
+	if ($opt_d ne "" && (-d $opt_d))
+	{
+		$opt_l = $opt_d . "/" . $opt_l ;
+	}
 	open ($lh, '>', "$opt_l") || die "Can't open $opt_l for writing:$!\n" ; 
 }
 my @clusterfiles ;
@@ -70,6 +74,7 @@ while (my $fname = readdir(DIR)) {
 		while (<SH>) {
 			chomp ;
 			/skipped/ && print "$_\n" ;
+			/unassigned/i && print "$_\n" ;
 			/Too many/ && print "$_\n" ;
 			if (/Couldn't find/) { print "$_\n" ; }
 			/^Consolidated:(.*)$/ && do {
@@ -95,6 +100,7 @@ while (my $fname = readdir(DIR)) {
 close (FH) ;
 
 my $first = 1;
+my %tot ;
 foreach my $st (sort keys %cons) {
 	my %det = %{$cons{$st}} ;
 	if ($first) {
@@ -106,10 +112,16 @@ foreach my $st (sort keys %cons) {
 	}
 	print $lh "$st " ;
 	foreach my $stdk (sort keys %det) {
+		$tot{$stdk} += $det{$stdk} ;
 		print $lh "$det{$stdk} " ;
 	}
 	print $lh "\n" ;
 }
+print "Total:" ;
+foreach my $tdk (sort keys %tot) {
+	print "$tdk -> $tot{$tdk} ";
+}
+print "\n" ;
 
 sub HELP_MESSAGE {
 print STDERR <<EOH

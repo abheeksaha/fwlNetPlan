@@ -149,6 +149,7 @@ my %terrainData ;
 # 
 # Now convert placemarks into polygons
 #
+my $skipped = 0;
 foreach my $pref (@placemarkhashes) {
 	my $countyAoiCtr = 0;
 	my $geometries = $$pref{'MultiGeometry'}{'AbstractGeometryGroup'} ;
@@ -187,11 +188,18 @@ foreach my $pref (@placemarkhashes) {
 	my $countyAoiCtr = $countydata{$county}{'centroid'};
 	my @polyholes ;
 	my $holearea = 0;
+	my $pg = @$geometries;
+	my $parea ;
 	foreach my $geomkey (@$geometries) {
 		my $coordinates = $$geomkey{'Polygon'}{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} ;
 		my @plist = arrayToPolygon($coordinates) ;
-		splice @pcoords,@pcoords,0,@plist ;
-		$polygonlist[$nxtp++] = Math::Polygon->new(@plist) ;
+		$polygonlist[$nxtp] = Math::Polygon->new(@plist) ;
+		$polygonlist[$nxtp]->simplify() ;
+		my $pcnt = $polygonlist[$nxtp]->nrPoints ; 
+		my $pparea = $polygonlist[$nxtp]->area()*$milesperlat*$milesperlong ;
+		printf "Converted placemark to convex hull of %d points, area = %.4g (closed=%d) ", $pcnt,$pparea,$polygonlist[$nxtp]->isClosed() ;
+		next unless ($polygonlist[$nxtp]->isClosed()) ;
+		$parea += $pparea ;
 		if (defined($$geomkey{'Polygon'}{'innerBoundaryIs'})) {
 			my $holes = $$geomkey{'Polygon'}{'innerBoundaryIs'} ;
 			my $nh  = @$holes ;
@@ -199,6 +207,7 @@ foreach my $pref (@placemarkhashes) {
 				print "Found $nh holes in $$pref{'name'}: " ;
 				foreach my $hole (@$holes) {
 					my $hp = Math::Polygon->new(arrayToPolygon($$hole{'LinearRing'}{'coordinates'})) ;
+					$hp->simplify() ;
 					printf "hole of area %.4g, ", $hp->area * $milesperlat * $milesperlong ;
 					push @polyholes,$hp ;
 					$holearea += $hp->area() * $milesperlat * $milesperlong ;
@@ -206,56 +215,57 @@ foreach my $pref (@placemarkhashes) {
 				print "\n" ;
 			}
 		}
+		$nxtp++ ;
 		undef $$geomkey{'Polygon'}{'altitudeMode'} ;
 	#{ print "coordinate string: $$geomkey{'Polygon'}{'outerBoundaryIs'}{'LinearRing'}{'coordinates'}\n" ; }
 	}
 	#
 	# Close the pcoords
 	# 
-	{
-		my @first = @{$pcoords[0]} ;
-		my @last = @{$pcoords[$#pcoords]} ;
-		if ($first[0] != $last[0] || $first[1] != $last[1]) {
-			splice @pcoords,@pcoords - 1, 1, \@first;
-		}
-	}
-	my $nxtaoi = chainHull_2D @pcoords ;
+	#{
+	#	my @first = @{$pcoords[0]} ;
+	##	my @last = @{$pcoords[$#pcoords]} ;
+	#	if ($first[0] != $last[0] || $first[1] != $last[1]) {
+	#		splice @pcoords,@pcoords - 1, 1, \@first;
+	#	}
+	#}
+	# my $nxtaoi = chainHull_2D @pcoords ;
 	#	my $nxtaoi = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@polygonlist)) ;
-	$nxtaoi->simplify() ;
-	my $pcnt = $nxtaoi->nrPoints ;
-	my $parea = $nxtaoi->area()*$milesperlat*$milesperlong ;
+	#my $nxtaoi = Math::Polygon->new(@pcoords) ;
+	#$nxtaoi->simplify() ;
 	$parea -= $holearea ;
-	printf "Converted placemark to convex hull of %d points, area = %.4g (closed=%d) ", $pcnt,$parea,$nxtaoi->isClosed() ;
 	my $numholes = @polyholes ;
 	print "Found $numholes holes\n" ; 
-	next unless ($parea > $EPS) ;
-	next unless ($nxtaoi->isClosed()) ;
-	my $center =  $nxtaoi->centroid() ;
+	#next unless ($parea > $EPS) ;
+	my $center =  getPlistCentroid(\@polygonlist) ; ;
 	($$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]) = @$center ;
 	my %tdata ; 
 	{
 			my %histogram ;
-			my $npts = int($nxtaoi->area()*$milesperlat*$milesperlong)+1 ;
-			print "Calling samplehistogram with $npts points for placemark $$pref{'name'}:" ;
-			nlcd::sampleHistogram($nxtaoi,$npts*100,\%histogram) ;
-			#my $totalrange = @polycolors ;
+			my %lhist ;
+			foreach my $nxtaoi (@polygonlist) {
+				my $npts = int($nxtaoi->area()*$milesperlat*$milesperlong)+1 ;
+				print "Calling samplehistogram with $npts points for placemark $$pref{'name'}:" ;
+				nlcd::sampleHistogram($nxtaoi,$npts*100,\%lhist) ;
+				foreach my $ttype (keys %lhist) {
+					$histogram{$ttype} += $lhist{$ttype} ;
+				}
+			}
 			my $tcode = getTerrainCodeFromHistogram(\%histogram,100); 
 			$tdata{'terrainType'} = $tcode  ;
-			
-			print "$tdata{'terrainType'}\n" ;
 	}
 	$tdata{'area'} = $parea  ;
 	$terrainData{$$pref{'name'}} = \%tdata ;
 		
 		
 	#print " centroid=$$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]\n" ; 
-	my %aoihash = ( 'name' => $$pref{'name'} , 'polygon' => \$nxtaoi, 'holes' => \@polyholes ) ;
+	my %aoihash = ( 'name' => $$pref{'name'} , 'polygon' => \@polygonlist, 'holes' => \@polyholes ) ;
 	push @$listofAois,\%aoihash ;
 	$totalArea += $parea ;
 	$$countyAoiCtr++ ;
 	$aoiCtr++ ;
 }
-print "$aoiCtr AOIs recorded, total area of $totalArea: " ;
+print "$aoiCtr AOIs recorded, skipped $skipped\ntotal area of $totalArea: " ;
 for my $cname (keys %countydata) {
 	my $pc = $countydata{$cname}{'aois'};
 	my $np = @$pc ;
@@ -393,19 +403,23 @@ foreach my $cn (keys %countydata)
 					last ;
 				}
 			}
-			if ($pgon == 0) {
+			if (@$pgon == 0) {
 				print "Couldn't find $pk in data for $counties[$i]\n" ;
 				next ;
 			}
 		#		if ($pgon == 0) {die "Can't find $pk in list of placemarks\n" ;}
-			$$pgon->simplify() ;
-			my @points = $$pgon->points() ;
-			splice @clusterpoints,@clusterpoints,0,@points ;
-			push @plist,$$pgon ;
+			foreach my $pgn (@$pgon) {
+				$pgn->simplify() ;
+				my @points = $pgn->points() ;
+				splice @clusterpoints,@clusterpoints,0,@points ;
+				push @plist,$pgn ;
+			}
 		}
 		next if ((@clusterpoints == 0) || (@plist == 0 )) ;
 		my $badclusterpoly = chainHull_2D @clusterpoints ;
-		my $clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
+		#my $clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
+		my $clusterpoly =  Math::Polygon->new(@clusterpoints) ;
+		$clusterpoly->simplify() ;
 		printf "Convex operation returns polygon with %d points, closed=%d\n",$clusterpoly->nrPoints(),$clusterpoly->isClosed() ;
 		my %options ;
 		$options{''} = 1 ;
@@ -604,16 +618,18 @@ sub aoiClustersProximity{
 	my $aoisref = shift ;
 	my $thresh = shift ;
 	my @boxes ;
+	print "Proximity cluster " ;
 	for (my $aoi=0 ; $aoi < @$aoisref; $aoi++) {
 		my %box ;
 		$box{'id'} = ${$$aoisref[$aoi]}{'name'} ;
 		my $poly =  $$aoisref[$aoi]{'polygon'} ;
-		my $cnt = $$poly->centroid ;
+		my $cnt = getPlistCentroid($poly) ;
 		$box{'centroid'} = $cnt ;
-		$box{'area'} = $$poly->area * $milesperlat * $milesperlong ;
-		#printf "Polygon of centroid %.4g,%.4g, area %.4g\n", $$cnt[0], $$cnt[1], $$poly->area ;
+		$box{'area'} = getPlistArea($poly) * $milesperlat * $milesperlong ;
+		#printf "C=%.4g,%.4g, A=%.4g ",$$cnt[0], $$cnt[1],$box{'area'} ;
 		push @boxes,\%box ;
 	}
+	#print "\n" ;
 	my $nb = @boxes ;
 	print "Produced array of size $nb boxes\n" ;
 	my %clusters = proximityCluster::proximityCluster(\@boxes,$thresh) ;
@@ -743,7 +759,7 @@ sub printReport{
 	#	print Dumper $tdata ;
 	#return 0;
 	open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
-	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better,clusterweighted), List of CBGs\n" ;
+	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better clusterweighted), List of CBGs\n" ;
 	print "Processing counties..." ;
 	my ($totalArea,$totalTowers,$totalTowers2,$totalCbgArea) ;
 	$totalArea = $totalTowers = $totalTowers2 = $totalCbgArea = 0 ;
@@ -760,11 +776,10 @@ sub printReport{
 			#print "Name $$aoi{'name'}..." ;
 			my $poly = $$aoi{'polygon'} ;
 			my $holes = $$aoi{'holes'} ;
-			$aoiArea{$$aoi{'name'}} = $$poly->area * $milesperlat * $milesperlong ; 
+			$aoiArea{$$aoi{'name'}} = getPlistArea($poly) * $milesperlat * $milesperlong ; 
 			foreach my $hole (@$holes) {
 				$aoiHoleArea{$$aoi{'name'}} += $hole->area * $milesperlat * $milesperlong ;
 			}
-			#printf "area = %.4g..", $$poly->area ;
 			$terrainCode{$$aoi{'name'}} = $$tdata{$$aoi{'name'}}{'terrainType'} ;
 			{
 				my $tc = $terrainCode{$$aoi{'name'}} ;
@@ -858,3 +873,31 @@ Usage: kmz.pl -f <input kmz file> -k <output kmz file/dir> -r <report file>  -K 
 EOH
 ;
 }
+
+sub getPlistCentroid {
+	my $plist = shift ;
+	my @cx ;
+	my $ta = 0 ;
+	$cx[0] = $cx[1] = 0;
+	for my $pg (@$plist) {
+		my $a = $pg->area() ;
+		my $cl = $pg->centroid() ;
+		$cx[0] += $$cl[0]*$a ;
+		$cx[1] += $$cl[1]*$a ;
+		$ta += $a ;
+	}
+	die unless ($ta > 0) ;
+	$cx[0] = $cx[0]/$ta ;
+	$cx[1] = $cx[1]/$ta ;
+	return \@cx ;
+}
+
+sub getPlistArea {
+	my $plist = shift ;
+	my $ta = 0 ;
+	for my $pg (@$plist) {
+		$ta += $pg->area() ;
+	}
+	return $ta ;
+}
+
