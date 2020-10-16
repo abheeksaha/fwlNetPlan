@@ -60,17 +60,19 @@ my @placemarks ;
 my @newfolders ;
 my @stylegroup;
 my $fdrcnt = 0 ;
- 
+my %countByState ;
 
 #  note that IDs are 1-based
 
 my $totalArea = 0 ;
 my $aoiCtr = 0;
 printf STDERR "Loaded %d shapes\n",$shapefile->shapes() ;
+my $skipped = 0;
 foreach my $id (1 .. $shapefile->shapes()) {
 	my $shape = $shapefile->get_shp_record($id);
 # see Geo::ShapeFile::Shape docs for what to do with $shape
 	my %db = $shapefile->get_dbf_record($id);
+	$countByState{$db{'state_abbr'}}++ ;
 	next unless ($opt_s eq "" || ($db{'state_abbr'} eq $opt_s))  ;
 	my $record = $shapefile->get_shp_record($id) ;
 	my ($np,$npt,$st) ;
@@ -136,14 +138,23 @@ foreach my $id (1 .. $shapefile->shapes()) {
 			splice @pcoords,@pcoords - 1, 1, \@first;
 		}
 	}
-	my $nxtaoi = chainHull_2D @pcoords ;
-	$nxtaoi->simplify() ;
+	#my $nxtaoi = chainHull_2D @pcoords ;
+	#$nxtaoi->simplify() ;
+	my $nxtaoi = Math::Polygon->new(@pcoords) ;
 	my $pcnt = $nxtaoi->nrPoints ;
 	my $parea = $nxtaoi->area()*$milesperlat*$milesperlong ;
 	$parea -= $holearea ;
 	printf "Converted placemark to convex hull of %d points, area = %.4g (closed=%d) ", $pcnt,$parea,$nxtaoi->isClosed() ;
 	#next unless ($parea > $EPS) ;
-	next unless ($nxtaoi->isClosed()) ;
+	if (!$nxtaoi->isClosed()) { 
+		foreach my $pt (@pcoords) {
+			print "@$pt\n" ;
+		}
+		print "Polygon is not closed\n" ;
+		$skipped++ ; 
+		next ; 
+	}
+
 	my $center =  $nxtaoi->centroid() ;
 	($$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]) = @$center ;
 	my %tdata ; 
@@ -175,7 +186,9 @@ foreach my $id (1 .. $shapefile->shapes()) {
 	$totalArea += $parea ;
 	$aoiCtr++ ;
 }
-printf " Pushed %d placemarks\n", @placemarks ;
+my $np1 = @placemarks ;
+printf "Pushed %d placemarks skipped=%d \n", $np1,$skipped ;
+my $tt = 0 ;
 srand($$) ;
 
 # 
@@ -579,7 +592,7 @@ sub printReport{
 	#	print Dumper $tdata ;
 	#return 0;
 	open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
-	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better,clusterweighted)," ;
+	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better clusterweighted)," ;
 	if ($noclustering) {
 		print FREP "CBGID,FID\n" ; 
 	}

@@ -69,6 +69,8 @@ while (my $fname = readdir(DIR)) {
 		open (SH, "$estring") || die "Can't open $estring\n" ;
 		while (<SH>) {
 			chomp ;
+			/skipped/ && print "$_\n" ;
+			/Too many/ && print "$_\n" ;
 			if (/Couldn't find/) { print "$_\n" ; }
 			/^Consolidated:(.*)$/ && do {
 				my $ln = $1 ;

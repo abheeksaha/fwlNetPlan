@@ -10,7 +10,7 @@ use Getopt::Std ;
 our $opt_f = "" ;
 our $opt_w = "" ;
 our $opt_K = "proximity5" ;
-our $opt_l = "-" ;
+our $opt_l = sprintf("shp_log.log",$$) ;
 our $opt_d = "" ;
 getopts('d:f:w:K:l:') ;
 
@@ -28,6 +28,7 @@ if ($opt_l eq "-") {
 	$lh = *STDOUT ;
 }
 else {
+	if ($opt_d ne "" && (-d $opt_d)) { $opt_l = $opt_d . "/" . $opt_l ; }
 	open ($lh, '>', "$opt_l") || die "Can't open $opt_l for writing:$!\n" ; 
 }
 
@@ -57,6 +58,7 @@ foreach my $st (@states) {
 	open (SH, "$estring") || die "Can't open $estring\n" ;
 	while (<SH>) {
 		chomp ;
+		/skipped/ && print "$_\n" ;
 		/^Consolidated:(.*)$/ && do {
 			my $ln = $1 ;
 			my @lflds = split /[=,\s]/, $ln;
@@ -72,6 +74,7 @@ foreach my $st (@states) {
 }
 
 my $first = 1;
+my %tot ;
 foreach my $st (sort keys %cons) {
 	my %det = %{$cons{$st}} ;
 	if ($first) {
@@ -83,10 +86,17 @@ foreach my $st (sort keys %cons) {
 	}
 	print $lh "$st " ;
 	foreach my $stdk (sort keys %det) {
+		$tot{$stdk} += $det{$stdk} ;
 		print $lh "$det{$stdk} " ;
 	}
 	print $lh "\n" ;
 }
+
+print "Total:" ;
+foreach my $tdk (sort keys %tot) {
+	print "$tdk -> $tot{$tdk} ";
+}
+print "\n" ;
 
 sub HELP_MESSAGE {
 print STDERR <<EOH
