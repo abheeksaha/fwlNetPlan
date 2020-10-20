@@ -9,10 +9,11 @@ use strict ;
 use Getopt::Std ;
 our $opt_f = "" ;
 our $opt_w = "" ;
-our $opt_K = "proximity5" ;
+our $opt_K = "proximity1,2,3,4,5,6,7" ;
 our $opt_l = sprintf("shp_log.log",$$) ;
 our $opt_d = "" ;
-getopts('d:f:w:K:l:') ;
+our $opt_r = "" ;
+getopts('d:f:w:K:l:r:') ;
 
 my @states = "" ;
 my %cons ;
@@ -37,11 +38,17 @@ print "Loaded states @states \n" ;
 foreach my $st (@states) {
 	next unless ($st =~ /[A-Z]{2}/) ;
 	my $estring ;
-	my $recfile = $st . "record.csv" ;
+	my $recfile ; 
 	my $kmzfile = $st . "mod.kmz" ;
+	if ($opt_r eq "") { 
+		$recfile = $st . "record.csv" ;  
+	}
+	else {
+		$recfile = $opt_r ;
+	}
 	if ($opt_d ne "") {
 		if (-d $opt_d) {
-			$recfile = $opt_d . "/" . $recfile ; 
+			if ($opt_r eq "") { $recfile = $opt_d . "/" . $recfile ;  }
 			$kmzfile = $opt_d . "/" . $kmzfile ; 
 		}
 		else {
@@ -101,7 +108,7 @@ exit(1) ;
 
 sub HELP_MESSAGE {
 print STDERR <<EOH
-Usage: $0 -f inputshpfile -K <default clustering> -w <whitelist file> 
+Usage: $0 -f inputshpfile -K <default clustering> -w <whitelist file>  [-r optional single record file]
 EOH
 ;
 }

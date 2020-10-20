@@ -201,7 +201,7 @@ use Math::Polygon::Convex qw/chainHull_2D/ ;
 # Now convert placemarks into polygons
 #
 print "$aoiCtr AOIs recorded, total area of $totalArea: " ;
-for my $cname (keys %countydata) {
+for my $cname (sort keys %countydata) {
 	my $pc = $countydata{$cname}{'aois'};
 	my $np = @$pc ;
 	print "$cname -> $np ",
@@ -214,7 +214,7 @@ print "\n" ;
 
 my (@clusters,@clustercenters,$numclusters,@tclusters,$nc) ;
 $nc = $numclusters = 0;
-foreach my $cn (keys %countydata)
+foreach my $cn (sort keys %countydata)
 {
 	my @aois = @{$countydata{$cn}{'aois'}} ;
 	if ($opt_K eq "Kmeans"){
@@ -232,12 +232,68 @@ foreach my $cn (keys %countydata)
 	}
 	elsif ($opt_K =~ /proximity([.0-9]+)/) {
 		my $thresh = 5 ;
-		($opt_K =~ /proximity([.0-9]+)/) && do {
+		($opt_K =~ /proximity([.0-9,]+)/) && do {
 			$thresh = $1 ; 
 		} ;
-		print "Trying Proximity clustering for $cn ($thresh) \n" ;
-		($clusters[$nc],$tclusters[$nc]) = 
-			aoiClustersProximity($countydata{$cn}{'aois'},$thresh) ;
+		my @threshvals = split(/,/,$thresh) ;
+		my $bestTwrs = -1 ;
+		my $bestThresh = -1 ;
+		my ($bestCluster,$bestClLst) ;
+		my (@tempcl, @tempClLst) ;
+		my @clusterdesc ;
+		print "Trying proximity clustering for $thresh!\n" ;
+		for (my $tval=0; $tval < @threshvals; $tval++) {
+			print "Trying Proximity clustering for $cn (scatter=$threshvals[$tval]) \n" ;
+			($tempcl[$tval],$tempClLst[$tval])  = aoiClustersProximity($countydata{$cn}{'aois'},$tval) ;
+			my @clist ;
+			my @clusterpoints ;
+			splice @clusterdesc,0,@clusterdesc ;
+			foreach my $newc (sort keys %{$tempcl[$tval]})
+			{
+				my @clist = @{$tempcl[$tval]->{$newc}} ;
+				my @plist ;
+				my @hlist ; 
+				my $cliststring = "" ;
+				next if (@clist == 0) ;
+				for my $pk (@clist){
+					my $pgon = 0 ;
+					my $preflist = $countydata{$cn}{'aois'};
+					$cliststring .= sprintf("%s:",$pk) ;
+					foreach my $pref (@$preflist) {
+						if ($$pref{'name'} eq $pk) {
+							$pgon = $$pref{'polygon'} ;
+							last ;
+						}
+					}
+					if ($pgon == 0) {
+						print "Couldn't find $pk in data for $counties[$cn]\n" ;
+						next ;
+					}
+		#		if ($pgon == 0) {die "Can't find $pk in list of placemarks\n" ;}
+					$$pgon->simplify() ;
+					my @points = $$pgon->points() ;
+					splice @clusterpoints,@clusterpoints,0,@points ;
+					push @plist,$$pgon ;
+				}
+				next if ((@clusterpoints == 0) || (@plist == 0 )) ;
+				my $badclusterpoly = chainHull_2D @clusterpoints ;
+				my %cinf ;
+				$cinf{'name'} = $newc;
+				$cinf{'poly'} = $badclusterpoly ;
+				push @clusterdesc , \%cinf ;
+			}
+			my ($T,$T2) = estimateTowersInClusterList(\@clusterdesc,$tempcl[$tval],
+						$countydata{$cn}{'aois'},\%terrainData) ;
+			if ($T2 < $bestTwrs || $bestTwrs == -1) { 
+				$bestCluster = $tempcl[$tval] ;
+				$bestClLst = $tempClLst[$tval] ;
+				$bestTwrs = $T2 ;
+				$bestThresh = $threshvals[$tval] ;
+			}
+		}
+		print "Best thresh for county $cn ($nc)= $bestThresh\n" ;
+		$clusters[$nc]=$bestCluster;
+		$tclusters[$nc]=$bestClLst ; 
 	}
 	elsif ($noclustering == 1) {
 		($clusters[$nc],$tclusters[$nc]) =
@@ -256,6 +312,16 @@ foreach my $cn (keys %countydata)
 	$nc++ ;
 }
 
+#for my $cn (sort keys %countydata) {
+#	my $cdata = $countydata{$cn}{'clusterMap'} ;
+#	print "Best thresh $cn =>  " ;
+#	for my $cn2 (sort keys %$cdata) {
+#		my @cl = @{$$cdata{$cn2}} ;
+#		print "$cn2 => @cl " ; 
+#	}
+#}
+print "\n" ;
+
 # Prepare the styles
 for ($nc = 0; $nc<@polycolors; $nc++){
 	print "Adding new style $nc\n" ;
@@ -267,13 +333,13 @@ for ($nc = 0; $nc<@polycolors; $nc++){
 
 my $i = 0;
 my $newcn = 0;
-foreach my $cn (keys %countydata)
+foreach my $cn (sort keys %countydata)
 {
 	my @newclusters ;
 	my $ccn = 0 ;
-	foreach my $newc (keys %{$clusters[$i]}) {
+	foreach my $newc (sort keys %{$countydata{$cn}{'clusterMap'}}) {
 		my @clusterpoints ;
-		my @clist = @{$clusters[$i]->{$newc}} ;
+		my @clist = @{$countydata{$cn}{'clusterMap'}{$newc}} ;
 		my @plist ;
 		my @hlist ; 
 		my $cliststring = "" ;
@@ -301,11 +367,11 @@ foreach my $cn (keys %countydata)
 		}
 		next if ((@clusterpoints == 0) || (@plist == 0 )) ;
 		my $badclusterpoly = chainHull_2D @clusterpoints ;
-		my $clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
-		printf "Convex operation returns polygon with %d points, closed=%d\n",$clusterpoly->nrPoints(),$clusterpoly->isClosed() ;
+		#my $clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
+		#printf "Convex operation returns polygon with %d points, closed=%d\n",$clusterpoly->nrPoints(),$clusterpoly->isClosed() ;
 		my %options ;
 		$options{''} = 1 ;
-		@clusterpoints = $clusterpoly->points() ;
+		@clusterpoints = $badclusterpoly->points() ;
 		my %cinf ;
 		$cinf{'name'} = $newc;
 		$cinf{'poly'} = $badclusterpoly ;
@@ -317,7 +383,7 @@ foreach my $cn (keys %countydata)
 			my $cname ;
 			$cstyle = sprintf("TerrainStyle%.3d",$newcn%@polycolors) ;
 			# Find the pref and copy it into the cluster data ;
-			my @pmarkname = @{$clusters[$i]->{$newc}} ;
+			my @pmarkname = @{$countydata{$cn}{'clusterMap'}{$newc}} ;
 			my @consolidatedPolygonList ;
 			if ($noclustering) {
 				$cname = sprintf("CBG_%s" , $cliststring) ;
@@ -380,7 +446,7 @@ if ($opt_k ne "") {
 
 
 if ($opt_r ne "") {
-	printReport(\%countydata,$opt_r,\%terrainData,$noclustering) ;
+	printReport(\%countydata,$opt_r,\%terrainData,$noclustering,$opt_s) ;
 }
 #
 # Last step. Dump the state bounding boxes on the screen
@@ -527,7 +593,7 @@ sub prompt{
 sub findInClusters {
 	my $name = shift ;
 	my $clusters = shift ;
-	foreach my $cid (keys %{$clusters})
+	foreach my $cid (sort keys %{$clusters})
 	{
 		for my $centry (@{$clusters->{$cid}}) {
 			if ($centry eq $name) {
@@ -579,7 +645,102 @@ sub getCounty{
 	}
 	return ($cname,$fnd) ;
 }
+
+sub computeTowersPerAoi {
+	my $listofAois = shift ;
+	my $terrainCode = shift ;
+	my $tdata = shift ;
+	my %aoiArea ;
+	my %aoiHoleArea ;
+	my %towers;
+	my %towers2;
+	my %fid ;
+	for my $aoi (@$listofAois) {
+		#print "Name $$aoi{'name'}..." ;
+		my $poly = $$aoi{'polygon'} ;
+		my $holes = $$aoi{'holes'} ;
+		$fid{$$aoi{'name'}} = $$aoi{'fid'} ;
+		$aoiArea{$$aoi{'name'}} = $$poly->area * $milesperlat * $milesperlong ; 
+		foreach my $hole (@$holes) {
+			$aoiHoleArea{$$aoi{'name'}} += $hole->area * $milesperlat * $milesperlong ;
+		}
+		#printf "area = %.4g..", $$poly->area ;
+		$$terrainCode{$$aoi{'name'}} = $$tdata{$$aoi{'name'}}{'terrainType'} ;
+		{
+			my $tc = $$terrainCode{$$aoi{'name'}} ;
+			my $cellDensity = 68.24  - 0.166*$tc ;
+			my $cellDensity2 = 66.12 - 0.279*$tc ;
+			print "$$aoi{'name'}: Terrain code $tc, celldensity=$cellDensity, celldensity2 = $cellDensity2 " ;
+			if ($cellDensity2 > $cellDensity) { $cellDensity2 = $cellDensity ; }
+			if ($cellDensity == 0 || $cellDensity2 == 0) { die "terrain=$$terrainCode{$$aoi{'name'}} aoi = $$aoi{'name'} density=$cellDensity\n" ; }
+			printf "area=%.4g ",($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}}) ;
+			my $aoiTower = ((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity)) ;
+			$towers{$$aoi{'name'}} += $aoiTower ;
+
+			my $aoiTower2 =((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity2)) ;
+			$towers2{$$aoi{'name'}} += $aoiTower2 ;
+			print "aoiTower=$aoiTower aoiTower2=$aoiTower2\n" ;
+		}
+	}
+	return (\%aoiArea,\%aoiHoleArea,\%towers,\%towers2,\%fid) ;
+}
 	
+sub estimateTowersInClusterList{
+	my $clist = shift ;
+	my $clusterlist =  shift ;
+	my $listofAois =  shift ;
+	my $tdata = shift ;
+	my %terrainCode ;
+	my $T=0;
+	my $T2 = 0;
+	my ($aoiArea,$aoiHoleArea,$towers,$towers2,$fid) = computeTowersPerAoi($listofAois,\%terrainCode,$tdata) ;
+
+	for my $cid (@$clist) {
+		my $clusterarea = $milesperlat*$milesperlong*$$cid{'poly'}->area() ;
+		my $cbgClusterArea = 0 ; 
+		my $cbgClusterHoleArea = 0 ; 
+		my $twrs = 0;
+		my $twrs2 = 0;
+		my $weightedTerrainCode= 0 ;
+		my $cbglist = $$clusterlist{$$cid{'name'}} ;
+		for my $cbg (@$cbglist) {
+				$cbgClusterArea += $$aoiArea{$cbg} ; 
+				$cbgClusterHoleArea += $$aoiHoleArea{$cbg} ;
+				$twrs += $$towers{$cbg};
+				$twrs2 += $$towers2{$cbg};
+				$weightedTerrainCode += $terrainCode{$cbg}*($$aoiArea{$cbg} - $$aoiHoleArea{$cbg})  ;
+				print "$cbg -> $terrainCode{$cbg}, area=$$aoiArea{$cbg} hole=$$aoiHoleArea{$cbg} " ;
+		}
+		$twrs = int(0.5+$twrs) ; if ($twrs < 1) { $twrs = 1 ; }
+		$twrs2 = int(0.5+$twrs2) ; if ($twrs2 < 1) { $twrs2 = 1 ; }
+		print "weighted = $weightedTerrainCode " ;
+		$weightedTerrainCode = int($weightedTerrainCode/$cbgClusterArea) ;
+		print "normalized = $weightedTerrainCode\n" ;
+		my ($ctwrs,$ctwrs2) ;
+		{
+			my $clusterCellDensity = 68.24  - 0.166*$weightedTerrainCode ;
+			my $clusterCellDensity2 = 66.12 - 0.279*$weightedTerrainCode ;
+			if ($clusterCellDensity2 < $clusterCellDensity) {
+				$clusterCellDensity = $clusterCellDensity ;
+			}
+			$ctwrs = int(0.5 + ($clusterarea/$clusterCellDensity)) ;
+			$ctwrs2 = int(0.5 + ($clusterarea/$clusterCellDensity2)) ;
+			if ($ctwrs < 1) { $ctwrs = 1 } ;
+			if ($ctwrs2 < 1) { $ctwrs2 = 1 } ;
+			printf "Cluster level:cluster area:%.6g, clusterdensities=%.4g %.4g ",
+					$clusterarea, $clusterCellDensity, $clusterCellDensity2;
+			print "towers: $ctwrs $ctwrs2, $twrs,$twrs2\n" ;
+		}
+		my $pc = int(100.0*($cbgClusterArea - $cbgClusterHoleArea)/$clusterarea) ; 
+		if ($ctwrs < $twrs) { $twrs = $ctwrs ; }
+		if ($ctwrs2 < $twrs2) { $twrs2 = $ctwrs2 ; }
+		$T += $twrs ;
+		$T2 += $twrs2 ;
+	}
+	print "Final count:$T $T2\n" ;
+	return ($T,$T2) ;
+}
+
 
 # Formula for tower to cell density
 # c = 68.24 - 0.166*tc ;
@@ -589,15 +750,19 @@ sub printReport{
 	my $ofile = shift ;
 	my $tdata = shift ;
 	my $noclustering = shift ;
-	#	print Dumper $tdata ;
-	#return 0;
-	open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
-	print FREP "County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better clusterweighted)," ;
+	my $state = shift ;
+	if (-e $ofile) {
+		open (FREP,">>", "$ofile") || die "Can't open $ofile for writing/appending\n" ; 
+	}
+	else {
+		open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
+		print FREP "State,County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better clusterweighted)," ;
+	}
 	if ($noclustering) {
 		print FREP "CBGID,FID\n" ; 
 	}
 	else {
-		print FREP "CBG List\n" ;
+		print FREP "CBG List,FID List\n" ;
 	}
 
 
@@ -605,43 +770,12 @@ sub printReport{
 	my ($totalArea,$totalTowers,$totalTowers2,$totalCbgArea) ;
 	$totalArea = $totalTowers = $totalTowers2 = $totalCbgArea = 0 ;
 	for my $cname (sort keys %$cdata) {
+		print "....$cname...." ;
 		my $clist = $$cdata{$cname}{'clusters'} ;
 		my $clusterlist = $$cdata{$cname}{'clusterMap'} ;
 		my $listofAois = $$cdata{$cname}{'aois'} ;
-		my %aoiArea ;
-		my %aoiHoleArea ;
-		my %towers;
-		my %towers2;
-		my %terrainCode ;
-		my %fid ;
-		for my $aoi (@$listofAois) {
-			#print "Name $$aoi{'name'}..." ;
-			my $poly = $$aoi{'polygon'} ;
-			my $holes = $$aoi{'holes'} ;
-			$fid{$$aoi{'name'}} = $$aoi{'fid'} ;
-			$aoiArea{$$aoi{'name'}} = $$poly->area * $milesperlat * $milesperlong ; 
-			foreach my $hole (@$holes) {
-				$aoiHoleArea{$$aoi{'name'}} += $hole->area * $milesperlat * $milesperlong ;
-			}
-			#printf "area = %.4g..", $$poly->area ;
-			$terrainCode{$$aoi{'name'}} = $$tdata{$$aoi{'name'}}{'terrainType'} ;
-			{
-				my $tc = $terrainCode{$$aoi{'name'}} ;
-				my $cellDensity = 68.24  - 0.166*$tc ;
-				my $cellDensity2 = 66.12 - 0.279*$tc ;
-				print "$$aoi{'name'}: Terrain code $tc, celldensity=$cellDensity, celldensity2 = $cellDensity2 " ;
-				if ($cellDensity2 > $cellDensity) { $cellDensity2 = $cellDensity ; }
-				if ($cellDensity == 0 || $cellDensity2 == 0) { die "terrain=$terrainCode{$$aoi{'name'}} cname = $cname aoi = $$aoi{'name'} density=$cellDensity\n" ; }
-				printf "area=%.4g ",($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}}) ;
-				my $aoiTower = ((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity)) ;
-				$towers{$$aoi{'name'}} += $aoiTower ;
-
-				my $aoiTower2 =((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity2)) ;
-				$towers2{$$aoi{'name'}} += $aoiTower2 ;
-				print "aoiTower=$aoiTower aoiTower2=$aoiTower2\n" ;
-			}
-		}
-
+		my %terrainCode;
+		my ($aoiArea,$aoiHoleArea,$towers,$towers2,$fid) = computeTowersPerAoi($listofAois,\%terrainCode,$tdata) ;
 		for my $cid (@$clist) {
 			my $clusterarea = $milesperlat*$milesperlong*$$cid{'poly'}->area() ;
 			my $ostring = "" ;
@@ -656,15 +790,15 @@ sub printReport{
 
 				if ($ostring eq "") { $ostring = $cbg ; }
 				else { $ostring .= ":".$cbg ; }
-				if ($fstring eq "") { $fstring = $fid{$cbg} ; }
-				else { $fstring .= ":".$fid{$cbg} ; }
+				if ($fstring eq "") { $fstring .= $$fid{$cbg} ; }
+				else { $fstring .= ":".$$fid{$cbg} ; }
 
-				$cbgClusterArea += $aoiArea{$cbg} ; 
-				$cbgClusterHoleArea += $aoiHoleArea{$cbg} ;
-				$twrs += $towers{$cbg};
-				$twrs2 += $towers2{$cbg};
-				$weightedTerrainCode += $terrainCode{$cbg}*($aoiArea{$cbg} - $aoiHoleArea{$cbg})  ;
-				print "$cbg -> $terrainCode{$cbg}, area=$aoiArea{$cbg} hole=$aoiHoleArea{$cbg} " ;
+				$cbgClusterArea += $$aoiArea{$cbg} ; 
+				$cbgClusterHoleArea += $$aoiHoleArea{$cbg} ;
+				$twrs += $$towers{$cbg};
+				$twrs2 += $$towers2{$cbg};
+				$weightedTerrainCode += $terrainCode{$cbg}*($$aoiArea{$cbg} - $$aoiHoleArea{$cbg})  ;
+				print "$cbg -> $terrainCode{$cbg}, area=$$aoiArea{$cbg} hole=$$aoiHoleArea{$cbg} " ;
 			}
 			$twrs = int(0.5+$twrs) ; if ($twrs < 1) { $twrs = 1 ; }
 			$twrs2 = int(0.5+$twrs2) ; if ($twrs2 < 1) { $twrs2 = 1 ; }
@@ -687,12 +821,12 @@ sub printReport{
 				print "towers: $ctwrs $ctwrs2, $twrs,$twrs2\n" ;
 			}
 			my $pc = int(100.0*($cbgClusterArea - $cbgClusterHoleArea)/$clusterarea) ; 
-			printf FREP "%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,%d,%d,",
+			printf FREP "%.3s,%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,%d,%d,",
+				$state,
 				$cname,$$cid{'name'},
 				$clusterarea,$cbgClusterArea,$cbgClusterHoleArea,
 				$pc,$weightedTerrainCode,$twrs,$twrs2,$ctwrs,$ctwrs2;
-			if ($noclustering) { print FREP "$ostring,$fstring\n" ; }
-			else {print FREP "$ostring\n" ; }
+			{ print FREP "$ostring,$fstring\n" ; }
 
 			if ($ctwrs < $twrs) { $twrs = $ctwrs ; }
 			if ($ctwrs2 < $twrs2) { $twrs2 = $ctwrs2 ; }
@@ -703,7 +837,7 @@ sub printReport{
 		}
 	}
 	print "\n";
-	print FREP "Consolidated: Towers(all coverage) = $totalTowers, Towers(64QAM and better)=$totalTowers2,Area = $totalArea,CBG Area = $totalCbgArea\n" ;
+	#	print FREP "Consolidated: Towers(all coverage) = $totalTowers, Towers(64QAM and better)=$totalTowers2,Area = $totalArea,CBG Area = $totalCbgArea\n" ;
 	printf "Consolidated: Towers(all coverage)=%d, Towers(64QAM and better)=%d, Area=%.6g, CBG Area=%.6g\n",
        	$totalTowers,$totalTowers2,$totalArea,$totalCbgArea ;
 	close(FREP) ;
