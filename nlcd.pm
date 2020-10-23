@@ -55,12 +55,17 @@ sub codePointList {
 			my %bfContainer ; 
 			if (!fileInit($fname,$dname,\%bfContainer)) {
 				push @$codes,9999;
+				$bilfiles{$fname} = -1 ;
 				next ;
 			}
 			#foreach my $bfckey (keys %bfContainer) {
 			#	print "$bfckey => $bfContainer{$bfckey}\n" ;
 			#}
 			$bilfiles{$fname} = \%bfContainer ;
+		}
+		elsif ($bilfiles{$fname} == -1) {
+			push @$codes,9999 ;
+			next ;
 		}
 		if (!($npts++ % 100)) { print "." ; }
 		my $nlcdData = readNLCDData($bilfiles{$fname},$lat,$long) ;
@@ -79,8 +84,10 @@ sub constructFileDirName {
 	my $lat = shift ;
 	my $long = shift ;
 	my ($bdx,$bdy) ;
-	#print "Longitude: $long, Latitude:$lat\n" ;
-	die unless $long < 0 && $lat > 0 ;
+	if ($long > 0 && $lat < 0 ) {
+		die "Longitude: $long, Latitude:$lat\n" ;
+	}
+
 	$bdx = int($long/3) ; $bdy = int($lat/3) ;  
 	$bdx = -3*($bdx-1) ; $bdy = 3*int($bdy) ;
 	my $fname = sprintf( "NLCD2016_N%2dW%2d" , $bdy,$bdx) ;
