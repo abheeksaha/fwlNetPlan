@@ -1,0 +1,5 @@
+Site Name,Latitude,Longitude,Site Enabled,Device Name,Device Type,Max Power (dBm),Misc Loss (dB),Antenna Type,Mechanical Azimuth (deg),Mechanical Downtilt (deg),Electrical Downtilt (deg),Antenna Height AGL (m),Beamforming Gain (dB),LTE PDSCH Offset (dB),Cell Load (%)
+new site,43.1785183,-72.4818707,true,New Device 2,Outdoor,45,2,AW3161,147,0,0,40,0,0,50
+new site,43.1170241,-72.7499199,true,New Device 1,Outdoor,45,2,AW3161,138,0,0,50,0,0,50
+new site,43.1785183,-72.4818707,true,New Device 1,Outdoor,45,2,AW3161,-33,0,0,40,0,0,50
+new site (copy),42.9998766,-72.8916264,true,New Device 1,Outdoor,45,2,AW3161,176,0,0,50,0,0,50
