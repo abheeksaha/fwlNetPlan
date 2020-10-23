@@ -11,6 +11,7 @@ use Math::Polygon::Convex qw/chainHull_2D/ ;
 use KMZ ;
 use cvxPolygon;
 use nlcd;
+use txtKML ;
 use Data::Dumper ;
 $Data::Dumper::Indent = 1;
 my $milesperlat = 69 ;
@@ -50,8 +51,6 @@ if ($opt_K eq "no") {
 	$noclustering  = 1 ;
 }
 
-my $shapefile = Geo::ShapeFile->new($opt_f, {no_cache => 1});
-print STDERR "Loaded Shapefile!\n" ;
 
 my @counties ;
 my %countydata ;
@@ -66,43 +65,74 @@ my %countByState ;
 
 my $totalArea = 0 ;
 my $aoiCtr = 0;
-printf STDERR "Loaded %d shapes\n",$shapefile->shapes() ;
 my $skipped = 0;
-foreach my $id (1 .. $shapefile->shapes()) {
-	my $shape = $shapefile->get_shp_record($id);
+my @records ;
+my $nxt = 0 ;
+if ($opt_f =~ /.kml$/) {
+	print "Loading kml as txt file\n" ;
+	txtKML::loadKMLTxt($opt_f,\@records) ;
+}
+else {
+	my $shapefile = Geo::ShapeFile->new($opt_f, {no_cache => 1});
+	printf STDERR "Loaded %d shapes\n",$shapefile->shapes() ;
+	print STDERR "Loaded Shapefile!\n" ;
+	foreach my $id (1 .. $shapefile->shapes()) {
+		my $shape = $shapefile->get_shp_record($id);
 # see Geo::ShapeFile::Shape docs for what to do with $shape
-	my %db = $shapefile->get_dbf_record($id);
-	$countByState{$db{'state_abbr'}}++ ;
-	next unless ($opt_s eq "" || ($db{'state_abbr'} eq $opt_s))  ;
-	my $record = $shapefile->get_shp_record($id) ;
-	my ($np,$npt,$st) ;
-	$np = $record->num_parts ;
-	$npt = $record->num_points ;
-	$st = $record->shape_type ;
-	printf "Record has %d parts, %d points is of type %s ", $np, $npt, $st ;
+		my %db = $shapefile->get_dbf_record($id);
+		my $st = $db{'state_abbr'} ;
+		my $county = $db{'county'} ;
+		$countByState{$st}++ ;
+		my $record = $shapefile->get_shp_record($id) ;
+		my ($np,$npt,$st) ;
+		$np = $record->num_parts ;
+		$npt = $record->num_points ;
+		$st = $record->shape_type ;
+		printf "Record has %d parts, %d points is of type %s ", $np, $npt, $st ;
 
-	my @pcoords ;
-	my $nxt = 0;
-  	for(1 .. $record->num_parts) {
-  		my $part = $record->get_part($_);
-		my @points = $record->points() ;
-		foreach my $pt (@points) {
-			my @xy ;
-			$xy[0] = $pt->get_x();
-			$xy[1] = $pt->get_y() ;
-			@pcoords[$nxt++] = \@xy ;
+		my @pcoords ;
+		my $nxt = 0;
+  		for(1 .. $record->num_parts) {
+  			my $part = $record->get_part($_);
+			my @points = $record->points() ;
+			foreach my $pt (@points) {
+				my @xy ;
+				$xy[0] = $pt->get_x();
+				$xy[1] = $pt->get_y() ;
+				@pcoords[$nxt++] = \@xy ;
+			}
 		}
-	}
-	print "(Loaded $nxt points) " ;
+		print "(Loaded $nxt points) " ;
 
 
   # ... do something here, draw a map maybe
-	print "county $db{'county'} cbg = $db{'cbg_id'}\n" ;
-	if ($opt_w && !whiteListed(\@whitelist,$db{'cbg_id'})) {
+		print "county $db{'county'} cbg = $db{'cbg_id'}\n" ;
+		my %rec ;
+		$rec{'county'} = $db{'county'} ;
+		$rec{'state'} = $db{'state_abbr'} ;
+		$rec{'coordinates'} = \@pcoords ;
+		$rec{'cbg'} = $db{'cbg_id'} || "None" ;
+		$rec{'fid'} = $db{'ORIG_FID'} || "None" ;
+		push @records,\%rec ;
+	}
+}
+	
+my $nxt = @records ;
+print "Starting processing of records $nxt\n" ;
+for (my $i = 0 ; $i<$nxt ; $i++) 
+{
+	my $thisrec = $records[$i] ;
+	my $cpts = @{$$thisrec{'coordinates'}} ;
+	printf "[%d/%d] ",$i,$nxt ;
+	print "County:$$thisrec{'county'} State:$$thisrec{'state'} CBG:$$thisrec{'cbg'} FIP:$$thisrec{'fid'} $cpts points\n" ; 
+	if ($$thisrec{'county'} eq "") { next ; }
+	next unless ($opt_s eq "" || ($$thisrec{'state'} eq $opt_s))  ;
+	if ($opt_w && !whiteListed(\@whitelist,$$thisrec{'county'})) {
+		exit(4) ;
 		next ;
 	}
 
-	my $county = $db{'county'} ;
+	my $county = $$thisrec{'state'} . ":". $$thisrec{'county'} ;
 	print "County $county\n" ;
 	if (!defined %countydata{$county}) {
 		push @counties, $county;
@@ -128,26 +158,30 @@ foreach my $id (1 .. $shapefile->shapes()) {
 	my $cy = $countydata{$county}{'cy'} ;
 	my $countyAoiCtr = $countydata{$county}{'centroid'};
 	my $holearea = 0;
+	$countydata{$county}{'state'} = $$thisrec{'state'} ;
 	#
 	# Close the pcoords
 	# 
+	my $coordlist = $$thisrec{'coordinates'} ;
 	{
-		my @first = @{$pcoords[0]} ;
-		my @last = @{$pcoords[$#pcoords]} ;
+		my @first = @{$$coordlist[0]} ;
+		my $nc = @{$coordlist} ; 
+		my @last = @{$$coordlist[$nc-1]} ;
 		if ($first[0] != $last[0] || $first[1] != $last[1]) {
-			splice @pcoords,@pcoords - 1, 1, \@first;
+			splice @$coordlist,@$coordlist - 1, 1, \@first;
 		}
 	}
-	#my $nxtaoi = chainHull_2D @pcoords ;
+	#my $nxtaoi = chainHull_2D @$coordlist ;
 	#$nxtaoi->simplify() ;
-	my $nxtaoi = Math::Polygon->new(@pcoords) ;
+	my $nxtaoi = Math::Polygon->new(@$coordlist) ;
+	print "Initial coord list\n" ;
 	my $pcnt = $nxtaoi->nrPoints ;
 	my $parea = $nxtaoi->area()*$milesperlat*$milesperlong ;
 	$parea -= $holearea ;
 	printf "Converted placemark to convex hull of %d points, area = %.4g (closed=%d) ", $pcnt,$parea,$nxtaoi->isClosed() ;
 	#next unless ($parea > $EPS) ;
 	if (!$nxtaoi->isClosed()) { 
-		foreach my $pt (@pcoords) {
+		foreach my $pt (@$coordlist) {
 			print "@$pt\n" ;
 		}
 		print "Polygon is not closed\n" ;
@@ -161,8 +195,10 @@ foreach my $id (1 .. $shapefile->shapes()) {
 	{
 			my %histogram ;
 			my $npts = int($nxtaoi->area()*$milesperlat*$milesperlong)+1 ;
-			print "Calling samplehistogram with $npts points for placemark $db{'cbg_id'}:" ;
-			nlcd::sampleHistogram($nxtaoi,$npts*100,\%histogram) ;
+			print "Calling samplehistogram with $npts points for placemark $$thisrec{'county'}:" ;
+			my $spts = $npts*100 ;
+			if ($spts > 1200) { $spts = 1200 ; }
+			nlcd::sampleHistogram($nxtaoi,$spts,\%histogram) ;
 			#my $totalrange = @polycolors ;
 			my $tcode = getTerrainCodeFromHistogram(\%histogram,100); 
 			$tdata{'terrainType'} = $tcode  ;
@@ -170,18 +206,18 @@ foreach my $id (1 .. $shapefile->shapes()) {
 			print "$tdata{'terrainType'}\n" ;
 	}
 	$tdata{'area'} = $parea  ;
-	$terrainData{$db{'cbg_id'}} = \%tdata ;
+	$terrainData{$$thisrec{'cbg'}} = \%tdata ;
 		
-	my $desc = sprintf"%10s\n",$db{'ORIG_FID'};
+	my $desc = sprintf"%10s\n",$$thisrec{'fid'};
 	my @holes ;
 	my ($pname,$pid) ;
-	$pname = $db{'cbg_id'} ;
-	$pid = sprintf("ID_%d",$db{'ORIG_FID'}) ;
+	$pname = $$thisrec{'cbg'} ;
+	$pid = sprintf("ID_%d",$$thisrec{'fid'}) ;
 	my $pm = makeNewPlacemark($pname,$nxtaoi,\@holes,"",$pid,$desc) ;
 	push @placemarks,$pm;
 		
 	#print " centroid=$$cx[$$countyAoiCtr],$$cy[$$countyAoiCtr]\n" ; 
-	my %aoihash = ( 'name' => $db{'cbg_id'} , 'polygon' => \$nxtaoi, 'fid' => $db{'ORIG_FID'}) ;
+	my %aoihash = ( 'name' => $$thisrec{'cbg'} , 'polygon' => \$nxtaoi, 'fid' => $$thisrec{'fid'}) ;
 	push @$listofAois,\%aoihash ;
 	$totalArea += $parea ;
 	$aoiCtr++ ;
@@ -270,7 +306,7 @@ foreach my $cn (sort keys %countydata)
 						next ;
 					}
 		#		if ($pgon == 0) {die "Can't find $pk in list of placemarks\n" ;}
-					$$pgon->simplify() ;
+		#			$$pgon->simplify() ;
 					my @points = $$pgon->points() ;
 					splice @clusterpoints,@clusterpoints,0,@points ;
 					push @plist,$$pgon ;
@@ -366,7 +402,8 @@ foreach my $cn (sort keys %countydata)
 			push @plist,$$pgon ;
 		}
 		next if ((@clusterpoints == 0) || (@plist == 0 )) ;
-		my $badclusterpoly = chainHull_2D @clusterpoints ;
+		my $badclusterpoly = Math::Polygon->new(@clusterpoints) ;
+		printf "Area = %.4g\n",$badclusterpoly->area()*$milesperlat*$milesperlong ;
 		#my $clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
 		#printf "Convex operation returns polygon with %d points, closed=%d\n",$clusterpoly->nrPoints(),$clusterpoly->isClosed() ;
 		my %options ;
@@ -446,7 +483,7 @@ if ($opt_k ne "") {
 
 
 if ($opt_r ne "") {
-	printReport(\%countydata,$opt_r,\%terrainData,$noclustering,$opt_s) ;
+	printReport(\%countydata,$opt_r,\%terrainData,$noclustering) ;
 }
 #
 # Last step. Dump the state bounding boxes on the screen
@@ -750,19 +787,19 @@ sub printReport{
 	my $ofile = shift ;
 	my $tdata = shift ;
 	my $noclustering = shift ;
-	my $state = shift ;
+	my $state = "Nostate" ;
 	if (-e $ofile) {
 		open (FREP,">>", "$ofile") || die "Can't open $ofile for writing/appending\n" ; 
 	}
 	else {
 		open (FREP,">", "$ofile") || die "Can't open $ofile for writing\n" ; 
 		print FREP "State,County,Cluster id,Area (sq.miles), CBG ARea, Holes, %Coverage, Weighted Terrain Code(0-99),Number of Towers, Number of Towers (64QAM and better),Number of Towers (Cluster weighted), Number of Towers (64QAM and better clusterweighted)," ;
-	}
-	if ($noclustering) {
-		print FREP "CBGID,FID\n" ; 
-	}
-	else {
-		print FREP "CBG List,FID List\n" ;
+		if ($noclustering) {
+			print FREP "CBGID,FID\n" ; 
+		}
+		else {
+			print FREP "CBG List,FID List\n" ;
+		}
 	}
 
 
@@ -770,10 +807,11 @@ sub printReport{
 	my ($totalArea,$totalTowers,$totalTowers2,$totalCbgArea) ;
 	$totalArea = $totalTowers = $totalTowers2 = $totalCbgArea = 0 ;
 	for my $cname (sort keys %$cdata) {
-		print "....$cname...." ;
 		my $clist = $$cdata{$cname}{'clusters'} ;
 		my $clusterlist = $$cdata{$cname}{'clusterMap'} ;
 		my $listofAois = $$cdata{$cname}{'aois'} ;
+		$state = $$cdata{$cname}{'state'} ;
+		print "....$cname ($state)...." ;
 		my %terrainCode;
 		my ($aoiArea,$aoiHoleArea,$towers,$towers2,$fid) = computeTowersPerAoi($listofAois,\%terrainCode,$tdata) ;
 		for my $cid (@$clist) {
@@ -821,9 +859,10 @@ sub printReport{
 				print "towers: $ctwrs $ctwrs2, $twrs,$twrs2\n" ;
 			}
 			my $pc = int(100.0*($cbgClusterArea - $cbgClusterHoleArea)/$clusterarea) ; 
-			printf FREP "%.3s,%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,%d,%d,",
-				$state,
-				$cname,$$cid{'name'},
+			my ($st,$ct) = split /:/, $cname ;
+			printf FREP "%s,%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,%d,%d,",
+				$st,
+				$ct,$$cid{'name'},
 				$clusterarea,$cbgClusterArea,$cbgClusterHoleArea,
 				$pc,$weightedTerrainCode,$twrs,$twrs2,$ctwrs,$ctwrs2;
 			{ print FREP "$ostring,$fstring\n" ; }
