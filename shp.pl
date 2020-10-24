@@ -28,6 +28,7 @@ my $noclustering = 0;
 getopts('s:f:a:r:K:w:hk:') ;
 
 my @polycolors = (0xfffff8dc, 0xffffe4c4, 0xfff5deb3, 0xffd2b48c, 0xff90ed90,0xffadff2f, 0xff32cd32, 0xff228b22) ;
+my @solidcolors = (0xff2222ff) ;
 if ($opt_h) {
 	HELP_MESSAGE() ;
 	die ;
@@ -274,7 +275,7 @@ foreach my $cn (sort keys %countydata)
 		}
 		else {
 			my $sthresh = 4 ;
-			print "Trying Proximity clustering for $cn ($sthresh) \n" ;
+			print "Default: Trying Proximity clustering for $cn ($sthresh) \n" ;
 			($clusters[$nc],$tclusters[$nc]) = 
 				aoiClustersProximity($countydata{$cn}{'aois'},$sthresh) ;
 		}
@@ -289,10 +290,15 @@ foreach my $cn (sort keys %countydata)
 		my ($bestCluster,$bestClLst) ;
 		my (@tempcl, @tempClLst) ;
 		my @clusterdesc ;
+		if (@threshvals == 0) { push @threshvals, $thresh ; }
+		{
+			print "County $cn: @threshvals\n" ;
+			#exit(1) ;
+		}
 		print "Trying proximity clustering for $thresh, @threshvals!\n" ;
 		for (my $tval=0; $tval < @threshvals; $tval++) {
 			print "Trying Proximity clustering for $cn (scatter=$threshvals[$tval]) \n" ;
-			($tempcl[$tval],$tempClLst[$tval])  = aoiClustersProximity($countydata{$cn}{'aois'},$tval) ;
+			($tempcl[$tval],$tempClLst[$tval])  = aoiClustersProximity($countydata{$cn}{'aois'},$threshvals[$tval]) ;
 			my @clist ;
 			my @clusterpoints ;
 			splice @clusterdesc,0,@clusterdesc ;
@@ -324,7 +330,8 @@ foreach my $cn (sort keys %countydata)
 					push @plist,$$pgon ;
 				}
 				next if ((@clusterpoints == 0) || (@plist == 0 )) ;
-				my $badclusterpoly = chainHull_2D @clusterpoints ;
+				#my $badclusterpoly = chainHull_2D @clusterpoints ;
+				my $badclusterpoly = Math::Polygon->new(@clusterpoints) ;
 				my %cinf ;
 				$cinf{'name'} = $newc;
 				$cinf{'poly'} = $badclusterpoly ;
@@ -378,6 +385,11 @@ for ($nc = 0; $nc<@polycolors; $nc++){
 	$newstyle{'Style'} = \%newst ;
 	push @stylegroup, \%newstyle ;
 }
+my %clusterst  = makeNewOutlineStyle(0,$solidcolors[0]) ;
+my %clusterstyle ;
+$clusterstyle{'Style'} = \%clusterst ;
+push @stylegroup,\%clusterstyle ;
+
 
 my $i = 0;
 my $newcn = 0;
@@ -400,7 +412,7 @@ foreach my $cn (sort keys %countydata)
 		for my $pk (@clist){
 			my $pgon = 0 ;
 			my $preflist = $countydata{$cn}{'aois'};
-			$cliststring .= sprintf("%s:",$pk) ;
+			$cliststring .= sprintf("%s\n",$pk) ;
 			foreach my $pref (@$preflist) {
 				if ($$pref{'name'} eq $pk) {
 					$pgon = $$pref{'polygon'} ;
@@ -412,22 +424,31 @@ foreach my $cn (sort keys %countydata)
 				next ;
 			}
 		#		if ($pgon == 0) {die "Can't find $pk in list of placemarks\n" ;}
-			$$pgon->simplify() ;
+		#		$$pgon->simplify() ;
 			my @points = $$pgon->points() ;
 			splice @clusterpoints,@clusterpoints,0,@points ;
 			push @plist,$$pgon ;
 		}
 		next if ((@clusterpoints == 0) || (@plist == 0 )) ;
-		my $badclusterpoly = Math::Polygon->new(@clusterpoints) ;
-		printf "Area = %.4g\n",$badclusterpoly->area()*$milesperlat*$milesperlong ;
-		#my $clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
+		my ($badclusterpoly,$clusterpoly) ;
+		if (@plist == 1) {
+			$badclusterpoly = $plist[0] ; 
+			printf "Area = %.4g for %s county %s (no correction required)\n",$badclusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn ;
+			$clusterpoly = $badclusterpoly ;
+		}
+		else {
+			$badclusterpoly = Math::Polygon->new(@clusterpoints) ;
+			printf "Area = %.4g for %s county %s\n",$badclusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn ;
+			$clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
+			printf "Area = %.4g for %s county %s (corrected)\n",$clusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn ;
+		}
 		#printf "Convex operation returns polygon with %d points, closed=%d\n",$clusterpoly->nrPoints(),$clusterpoly->isClosed() ;
 		my %options ;
 		$options{''} = 1 ;
-		@clusterpoints = $badclusterpoly->points() ;
+		#@clusterpoints = $clusterpoly->points() ;
 		my %cinf ;
 		$cinf{'name'} = $newc;
-		$cinf{'poly'} = $badclusterpoly ;
+		$cinf{'poly'} = $clusterpoly ;
 		push @{$countydata{$cn}{'clusters'}} , \%cinf ;
 
 		print "Making new cluster from cbglist $cliststring\n" ;
@@ -473,6 +494,8 @@ foreach my $cn (sort keys %countydata)
 			}
 			my $newcluster = makeNewClusterFromPlacemark($ct,\@consolidatedPolygonList,$ccn,$cstyle,$description,$cname) ;
 			push @newclusters,$newcluster ;
+			my $outlinecluster = makeNewCluster($ct,$clusterpoly,$ccn,"ClusterStyle000","Outline",$cname) ;
+			push @newclusters,$outlinecluster ;
 		}
 		$newcn++ ; $ccn++ ; 
 		#printf("newcn -> $newcn\n") ;
@@ -593,6 +616,7 @@ sub aoiClustersProximity{
 	my $aoisref = shift ;
 	my $thresh = shift ;
 	my @boxes ;
+	print "Thresh = $thresh\nBoxing  " ;
 	for (my $aoi=0 ; $aoi < @$aoisref; $aoi++) {
 		my %box ;
 		$box{'id'} = ${$$aoisref[$aoi]}{'name'} ;
@@ -600,11 +624,12 @@ sub aoiClustersProximity{
 		my $cnt = $$poly->centroid ;
 		$box{'centroid'} = $cnt ;
 		$box{'area'} = $$poly->area * $milesperlat * $milesperlong ;
+		print "area=$box{'area'} id=$box{'id'} centroid=@{$box{'centroid'}} " ;
 		#printf "Polygon of centroid %.4g,%.4g, area %.4g\n", $$cnt[0], $$cnt[1], $$poly->area ;
 		push @boxes,\%box ;
 	}
 	my $nb = @boxes ;
-	print "Produced array of size $nb boxes\n" ;
+	print "\nProduced array of size $nb boxes \n" ;
 	my %clusters = proximityCluster::proximityCluster(\@boxes,$thresh) ;
 	my $nc = 0 ;
 	foreach my $cluster_id (sort keys %clusters) {

@@ -7,7 +7,7 @@ use Geo::KML ;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw(makeNewOutlineStyle makeNewSolidStyle makeNewPolygon makeNewPlacemark makeNewDescription makeNewFolder 
-makeNewDocumentFolder makeNewClusterFromPlacemark makeNewDocument makeNewFile) ; 
+makeNewCluster makeNewDocumentFolder makeNewClusterFromPlacemark makeNewDocument makeNewFile) ; 
 
 sub polygonToArray {
 	my $plist = shift ;
@@ -42,7 +42,7 @@ sub makeNewOutlineStyle{
 	$newst{'id'} = $styleid ;
 	$newst{'PolyStyle'} = {'color' => $clr, 'outline' => 1, 'fill' => 0} ;
 	$newst{'LabelStyle'} = { 'color' => $clr, 'scale' => 0.0000 } ;
-	$newst{'LineStyle'} = { 'color' => $clr, 'width' => 0 } ;
+	$newst{'LineStyle'} = { 'color' => $clr, 'width' => 2 } ;
 	%newst ;
 }
 sub makeNewSolidStyle{
@@ -74,6 +74,34 @@ sub makeNewSolidStyle{
 	$newst{'LabelStyle'} = { 'color' => $clr, 'scale' => 0.0000 } ;
 	$newst{'LineStyle'} = { 'color' => $bclr, 'width' => $bwidth } ;
 	%newst ;
+}
+
+sub makeNewCluster{
+	my $county = shift ;
+	my $clusterpoly = shift ;
+	my $newcn = shift ;
+	my $styleid = shift || sprintf("ClusterStyle%.3d",$newcn) ;
+	my $desc = shift || "Empty string\n" ;
+	my $cname = shift || sprintf "%s/Cluster_%d",$county,$newcn ;
+	my %newcluster ;
+	my $polygoncoords  = makeNewPolygon($clusterpoly) ;
+	my %placemark ;
+	my %polygon ;
+	my @polygons ;
+	$placemark{'name'} = $cname; 
+	$placemark{'styleUrl'} = "#".$styleid ;
+	$placemark{'description'} = $desc; 
+	$placemark{'id'} = sprintf("ClusterID_%d",$newcn)  ;
+
+	$polygon{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} = $polygoncoords ;
+	$polygon{'extrude'} = 0 ;
+	my %geom;
+	$geom{'Polygon'} = \%polygon ;
+	push @polygons,\%geom ;
+
+	$placemark{'MultiGeometry'}{'AbstractGeometryGroup'} = \@polygons ;
+	$newcluster{'Placemark'} = \%placemark ;
+	return \%newcluster ;
 }
 
 sub makeNewClusterFromPlacemark{
