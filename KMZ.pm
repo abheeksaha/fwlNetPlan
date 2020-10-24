@@ -7,7 +7,7 @@ use Geo::KML ;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw(makeNewOutlineStyle makeNewSolidStyle makeNewPolygon makeNewPlacemark makeNewDescription makeNewFolder 
-makeNewClusterFromPlacemark makeNewDocument makeNewFile) ; 
+makeNewDocumentFolder makeNewClusterFromPlacemark makeNewDocument makeNewFile) ; 
 
 sub polygonToArray {
 	my $plist = shift ;
@@ -177,6 +177,14 @@ EODESC
 return $descstring ;
 }
 
+sub makeNewDocumentFolder {
+	my $name = shift ;
+	my $listofdocuments = shift ;
+	my $folder = shift ;
+	$$folder{'name'} = $name ;
+	$$folder{'open'} = 1;
+	$$folder{'AbstractFeatureGroup'} = $listofdocuments;
+}
 sub makeNewFolder {
 	my $name = shift ;
 	my $listofplacemarks = shift;

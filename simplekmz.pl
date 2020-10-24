@@ -88,6 +88,9 @@ srand($$) ;
 print "Opening $opt_f for processing...\n" ;
 my ($ns,$data) = Geo::KML->readKML($opt_f) ;
 my $dhash = %$data{'Document'} ;
+print Dumper $data ;
+exit(1) ;
+
 #for (keys %$dhash) {
 #	print "Key $_: Value $$dhash{$_}\n" ;
 $$dhash{'name'} = $statename ;

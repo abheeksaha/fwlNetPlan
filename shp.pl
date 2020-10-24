@@ -20,11 +20,12 @@ our $opt_f = "" ;
 our $opt_w = "" ;
 our $opt_K = "proximity3" ;
 our $opt_r = "" ;
+our $opt_a = "" ;
 our $opt_s = "" ;
 our $opt_h = 0 ;
 our $opt_k = "" ;
 my $noclustering = 0;
-getopts('s:f:r:K:w:hk:') ;
+getopts('s:f:a:r:K:w:hk:') ;
 
 my @polycolors = (0xfffff8dc, 0xffffe4c4, 0xfff5deb3, 0xffd2b48c, 0xff90ed90,0xffadff2f, 0xff32cd32, 0xff228b22) ;
 if ($opt_h) {
@@ -118,6 +119,17 @@ else {
 }
 	
 my $nxt = @records ;
+my %allowedStates ;
+if ($opt_s ne "") {
+	print "Allowed states:" ;
+	my @sl = split( /[:,]/, $opt_s) ;
+	foreach my $s (@sl) {
+		$allowedStates{$s} = 1 ;
+		print "$s," ;
+	}
+	print "\n" ;
+}
+
 print "Starting processing of records $nxt\n" ;
 for (my $i = 0 ; $i<$nxt ; $i++) 
 {
@@ -126,7 +138,7 @@ for (my $i = 0 ; $i<$nxt ; $i++)
 	printf "[%d/%d] ",$i,$nxt ;
 	print "County:$$thisrec{'county'} State:$$thisrec{'state'} CBG:$$thisrec{'cbg'} FIP:$$thisrec{'fid'} $cpts points\n" ; 
 	if ($$thisrec{'county'} eq "") { next ; }
-	next unless ($opt_s eq "" || ($$thisrec{'state'} eq $opt_s))  ;
+	next unless (($opt_s eq "") || defined($allowedStates{$$thisrec{'state'}}))  ;
 	#next unless ($$thisrec{'county'} eq "Winston") ;
 	if ($opt_w && !whiteListed(\@whitelist,$$thisrec{'county'})) {
 		exit(4) ;
@@ -444,10 +456,10 @@ foreach my $cn (sort keys %countydata)
 						print "found at $found, " ;
 						#$$plmark{'Placemark'}{'styleUrl'} = $cstyle ;
 						my $pgons = $$plmark{'Placemark'}{'MultiGeometry'}{'AbstractGeometryGroup'} ;
-						foreach my $pgn (@$pgons) {
-							my $crdlist = $$pgn{'Polygon'}{'LinearRing'}{'coordinates'} ;
-							splice @$crdlist,2,@$crdlist - 4 ;
-						}
+						#foreach my $pgn (@$pgons) {
+						#	my $crdlist = $$pgn{'Polygon'}{'LinearRing'}{'coordinates'} ;
+						#	splice @$crdlist,2,@$crdlist - 4 ;
+						#}
 						splice @consolidatedPolygonList,@consolidatedPolygonList,0, @$pgons ;
 						splice @placemarks, $found,1 ;
 						my $nleft =@placemarks ;
@@ -485,7 +497,7 @@ if ($opt_k ne "") {
 	my ($nstyles,$nfolders) ;
 	$nstyles = @stylegroup ;
 	my @documents ;
-	foreach my $stn (keys %statefolders) {
+	foreach my $stn (sort keys %statefolders) {
 		$nfolders = @{$statefolders{$stn}};
 		print "$nstyles styles $nfolders folders\n" ;
 		$dhash = makeNewDocument($stn,$statefolders{$stn},\@stylegroup) ;
@@ -506,7 +518,10 @@ if ($opt_k ne "") {
 
 
 if ($opt_r ne "") {
-	printReport(\%countydata,$opt_r,\%terrainData,$noclustering) ;
+	printReport(\%countydata,$opt_r,\%terrainData,$noclustering,0) ;
+}
+elsif ($opt_a ne "") {
+	printReport(\%countydata,$opt_r,\%terrainData,$noclustering,1) ;
 }
 #
 # Last step. Dump the state bounding boxes on the screen
@@ -810,8 +825,9 @@ sub printReport{
 	my $ofile = shift ;
 	my $tdata = shift ;
 	my $noclustering = shift ;
+	my $appendMode = shift;
 	my $state = "Nostate" ;
-	if (-e $ofile) {
+	if (-e $ofile && ($appendMode == 1)) {
 		open (FREP,">>", "$ofile") || die "Can't open $ofile for writing/appending\n" ; 
 	}
 	else {
