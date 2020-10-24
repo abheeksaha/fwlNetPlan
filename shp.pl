@@ -56,7 +56,7 @@ my @counties ;
 my %countydata ;
 my %terrainData ;
 my @placemarks ;
-my @newfolders ;
+my %statefolders ;
 my @stylegroup;
 my $fdrcnt = 0 ;
 my %countByState ;
@@ -127,6 +127,7 @@ for (my $i = 0 ; $i<$nxt ; $i++)
 	print "County:$$thisrec{'county'} State:$$thisrec{'state'} CBG:$$thisrec{'cbg'} FIP:$$thisrec{'fid'} $cpts points\n" ; 
 	if ($$thisrec{'county'} eq "") { next ; }
 	next unless ($opt_s eq "" || ($$thisrec{'state'} eq $opt_s))  ;
+	#next unless ($$thisrec{'county'} eq "Winston") ;
 	if ($opt_w && !whiteListed(\@whitelist,$$thisrec{'county'})) {
 		exit(4) ;
 		next ;
@@ -266,18 +267,17 @@ foreach my $cn (sort keys %countydata)
 				aoiClustersProximity($countydata{$cn}{'aois'},$sthresh) ;
 		}
 	}
-	elsif ($opt_K =~ /proximity([.0-9]+)/) {
+	elsif ($opt_K =~ /proximity([.0-9,]+)/) {
 		my $thresh = 5 ;
-		($opt_K =~ /proximity([.0-9,]+)/) && do {
-			$thresh = $1 ; 
-		} ;
+		my @threshvals ;
+		$thresh = $1 ;
 		my @threshvals = split(/,/,$thresh) ;
 		my $bestTwrs = -1 ;
 		my $bestThresh = -1 ;
 		my ($bestCluster,$bestClLst) ;
 		my (@tempcl, @tempClLst) ;
 		my @clusterdesc ;
-		print "Trying proximity clustering for $thresh!\n" ;
+		print "Trying proximity clustering for $thresh, @threshvals!\n" ;
 		for (my $tval=0; $tval < @threshvals; $tval++) {
 			print "Trying Proximity clustering for $cn (scatter=$threshvals[$tval]) \n" ;
 			($tempcl[$tval],$tempClLst[$tval])  = aoiClustersProximity($countydata{$cn}{'aois'},$tval) ;
@@ -373,12 +373,16 @@ foreach my $cn (sort keys %countydata)
 {
 	my @newclusters ;
 	my $ccn = 0 ;
+	my ($st,$ct) = split(/:/,$cn) ;
 	foreach my $newc (sort keys %{$countydata{$cn}{'clusterMap'}}) {
 		my @clusterpoints ;
 		my @clist = @{$countydata{$cn}{'clusterMap'}{$newc}} ;
 		my @plist ;
 		my @hlist ; 
 		my $cliststring = "" ;
+		if ($ct eq "Winston") {
+			print "$newc => @{$countydata{$cn}{'clusterMap'}{$newc}}\n" ;
+		}
 		print "newc = $newc newcn = $newcn\n" ;
 		next if (@clist == 0) ;
 		for my $pk (@clist){
@@ -414,6 +418,7 @@ foreach my $cn (sort keys %countydata)
 		$cinf{'poly'} = $badclusterpoly ;
 		push @{$countydata{$cn}{'clusters'}} , \%cinf ;
 
+		print "Making new cluster from cbglist $cliststring\n" ;
 		my $description = makeNewDescription("Cluster $newcn, county $cn List of CBGs:$cliststring\n") ;
 		my $cstyle ;
 		{
@@ -439,6 +444,10 @@ foreach my $cn (sort keys %countydata)
 						print "found at $found, " ;
 						#$$plmark{'Placemark'}{'styleUrl'} = $cstyle ;
 						my $pgons = $$plmark{'Placemark'}{'MultiGeometry'}{'AbstractGeometryGroup'} ;
+						foreach my $pgn (@$pgons) {
+							my $crdlist = $$pgn{'Polygon'}{'LinearRing'}{'coordinates'} ;
+							splice @$crdlist,2,@$crdlist - 4 ;
+						}
 						splice @consolidatedPolygonList,@consolidatedPolygonList,0, @$pgons ;
 						splice @placemarks, $found,1 ;
 						my $nleft =@placemarks ;
@@ -450,7 +459,7 @@ foreach my $cn (sort keys %countydata)
 					die "Couldn't find $pmark!\n" ;
 				}
 			}
-			my $newcluster = makeNewClusterFromPlacemark($cn,\@consolidatedPolygonList,$ccn,$cstyle,$description,$cname) ;
+			my $newcluster = makeNewClusterFromPlacemark($ct,\@consolidatedPolygonList,$ccn,$cstyle,$description,$cname) ;
 			push @newclusters,$newcluster ;
 		}
 		$newcn++ ; $ccn++ ; 
@@ -460,25 +469,39 @@ foreach my $cn (sort keys %countydata)
 	print "Adding $nclusters placemarks for $cn\n" ; 
 	my %newfolder ; 
 	my %foldercontainer ;
-	makeNewFolder($cn,\@newclusters, \%newfolder, $fdrcnt++) ;
+	if (not defined $statefolders{$st}) {
+		my @newfolders ;
+		$statefolders{$st} = \@newfolders ;
+	}
+	makeNewFolder($ct,\@newclusters, \%newfolder, $fdrcnt++) ;
 	$foldercontainer{'Folder'} = \%newfolder ;
-	push @newfolders, \%foldercontainer ;
+	push @{$statefolders{$st}}, \%foldercontainer ;
 	$i++ ;
 }
 
 if ($opt_k ne "") {
 	my $dhash ;
+	my %tfolder ;
 	my ($nstyles,$nfolders) ;
 	$nstyles = @stylegroup ;
-	$nfolders = @newfolders;
-	print "$nstyles styles $nfolders folders\n" ;
-	if ($opt_s eq "") {
-		$dhash = makeNewDocument("Document",\@newfolders,\@stylegroup) ;
+	my @documents ;
+	foreach my $stn (keys %statefolders) {
+		$nfolders = @{$statefolders{$stn}};
+		print "$nstyles styles $nfolders folders\n" ;
+		$dhash = makeNewDocument($stn,$statefolders{$stn},\@stylegroup) ;
+		#	if ($opt_s eq "") {
+		#		$dhash = makeNewDocument("Document",\@newfolders,\@stylegroup) ;
+		#push @documents,$dhash;
+		#}
+		#else {
+		#$dhash = makeNewDocument($opt_s,\@newfolders,\@stylegroup) ;
+		push @documents,$dhash;
 	}
-	else {
-		$dhash = makeNewDocument($opt_s,\@newfolders,\@stylegroup) ;
-	}
-	makeNewFile($dhash,$opt_k) ;
+	makeNewDocumentFolder("AllUS",\@documents,\%tfolder) ;
+	my %cfolder ;
+	$cfolder{'Folder'} = \%tfolder ;
+	#	makeNewFile($dhash,$opt_k) ;
+	makeNewFile(\%cfolder,$opt_k) ;
 }
 
 
@@ -812,6 +835,13 @@ sub printReport{
 		my $listofAois = $$cdata{$cname}{'aois'} ;
 		$state = $$cdata{$cname}{'state'} ;
 		print "....$cname ($state)...." ;
+		my ($st,$ct) = split /:/, $cname ;
+		if ($ct eq "Winston") {
+			foreach my $cid (sort keys %$clusterlist) {
+				my @pnamelist = @{$$clusterlist{$cid}} ;
+				print "$cid => @pnamelist\n" ;
+			}
+		}
 		my %terrainCode;
 		my ($aoiArea,$aoiHoleArea,$towers,$towers2,$fid) = computeTowersPerAoi($listofAois,\%terrainCode,$tdata) ;
 		for my $cid (@$clist) {
@@ -859,7 +889,6 @@ sub printReport{
 				print "towers: $ctwrs $ctwrs2, $twrs,$twrs2\n" ;
 			}
 			my $pc = int(100.0*($cbgClusterArea - $cbgClusterHoleArea)/$clusterarea) ; 
-			my ($st,$ct) = split /:/, $cname ;
 			printf FREP "%s,%.10s,%10s,%.6g,%.4g,%.4g,%d%%,%d,%d,%d,%d,%d,",
 				$st,
 				$ct,$$cid{'name'},
