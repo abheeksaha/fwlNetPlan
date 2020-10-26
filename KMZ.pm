@@ -17,7 +17,7 @@ sub polygonToArray {
 		my $pstr ;
 		my @xy = @$i ;
 		last if (@xy == 0) ;
-		$pstr = sprintf "%.10g,%.10g,0", $xy[0], $xy[1] ;
+		$pstr = sprintf "%.10g,%.10g,0.", $xy[0], $xy[1] ;
 		push @opstr,$pstr ;
 	}
 	@opstr ;
@@ -40,8 +40,8 @@ sub makeNewOutlineStyle{
 	}
 	my $clr = (0xff<<24) | (($blue) << 16) | (($green) << 8) | ($red)  ;
 	$newst{'id'} = $styleid ;
-	$newst{'PolyStyle'} = {'color' => $clr, 'outline' => 1, 'fill' => 0} ;
-	$newst{'LabelStyle'} = { 'color' => $clr, 'scale' => 0.0000 } ;
+	#	$newst{'PolyStyle'} = {'color' => $clr, 'outline' => 1, 'fill' => 0} ;
+	#$newst{'LabelStyle'} = { 'color' => $clr, 'scale' => 0.0000 } ;
 	$newst{'LineStyle'} = { 'color' => $clr, 'width' => 2 } ;
 	%newst ;
 }
@@ -88,18 +88,22 @@ sub makeNewCluster{
 	my %placemark ;
 	my %polygon ;
 	my @polygons ;
-	$placemark{'name'} = $cname; 
+	my %line ;
+	$placemark{'name'} = $cname . "outline_cluster"; 
 	$placemark{'styleUrl'} = "#".$styleid ;
 	$placemark{'description'} = $desc; 
-	$placemark{'id'} = sprintf("ClusterID_%d",$newcn)  ;
+	$placemark{'id'} = sprintf("ClusterID_%d_outline",$newcn)  ;
 
-	$polygon{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} = $polygoncoords ;
-	$polygon{'extrude'} = 0 ;
+	#$polygon{'outerBoundaryIs'}{'LinearRing'}{'coordinates'} = $polygoncoords ;
+	#$polygon{'extrude'} = 0 ;
 	my %geom;
-	$geom{'Polygon'} = \%polygon ;
-	push @polygons,\%geom ;
+	#$geom{'Polygon'} = \%polygon ;
+	$line{'coordinates'} = $polygoncoords ;
+	$placemark{'LineString'} = \%line ;
+	#push @polygons,\%geom ;
 
-	$placemark{'MultiGeometry'}{'AbstractGeometryGroup'} = \@polygons ;
+	#$placemark{'MultiGeometry'}{'AbstractGeometryGroup'} = \@polygons ;
+	#$newcluster{'Placemark'} = \%placemark ;
 	$newcluster{'Placemark'} = \%placemark ;
 	return \%newcluster ;
 }

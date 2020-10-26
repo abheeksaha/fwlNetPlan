@@ -5,12 +5,33 @@ require Exporter ;
 use strict;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(combinePolygonsConvex printPointList);
+our @EXPORT = qw(combinePolygonsConvex printPointList, verifyConvexPolygon);
+my $milesperlat = 69 ;
+my $milesperlong = 54.6 ; 
 #
 # Start processing.. combine all points into single array 
 #
+sub ptToGPS{
+	my $lat = shift ;
+	my $lng = shift ;
+	my $str ;
+	my ($latmin,$latsec,$latdeg) ;
+	my ($lngmin,$lngsec,$lngdeg) ;
+	$latdeg = int($lat) ;
+	$latmin = int(($lat - $latdeg)*60.0) ;
+	$latsec = ($lat - $latdeg - ($latmin/60.0))*3600.0 ;
+
+	$lngdeg = int($lng) ;
+	$lngmin = int(($lng - $lngdeg)*60.0) ;
+	$lngsec = ($lng - $lngdeg - ($lngmin/60.0))*3600.0 ;
+	$str = sprintf("Lat %.4g,%.4g,%.4g, Long %.4g,%.4g,%.4g",
+		$latdeg,$latmin,$latsec, $lngdeg,$lngmin,$lngsec) ;
+	return $str ;
+}
+
 sub combinePolygonsConvex{
 	my $polylist = shift ;
+	my $verbose = shift || 0 ;
 	my @points ;
 	my $nump = @$polylist;
 	printf "Processing %d polygons\n", $nump ;
@@ -36,9 +57,11 @@ sub combinePolygonsConvex{
 		       		notAlreadyIn(@outsidepoints,$pt)) 
 				{ $skip = 1 ; last ; }
 		}
-		if ($skip == 0) { $outsidepoints[$ptcnt++] = $pt ; }
+		if ($skip == 0) { 
+			printf "Adding  point %s\n", ptToGPS($y,$x) unless ($verbose == 0);
+			$outsidepoints[$ptcnt++] = $pt ; }
 	}
-	print " reduced to $ptcnt\n" ; 
+	print " reduced to $ptcnt after elimination of internal points\n" ; 
 	#	printPointList(\@outsidepoints,"After consolidation",0) ;
 	#
 	#Normalize the points
@@ -68,10 +91,17 @@ sub combinePolygonsConvex{
 	
 	#Test for convexity
 	my $cvx = 1 ;
+	my $cvxPoints = \@sortedpoints ;
+	my $lpts = @sortedpoints ;
+	print "Started with $lpts\n" ;
 	do {  
-		$cvx = makeConvexPolygon(\@sortedpoints) ;
+		($cvxPoints,$cvx) = makeConvexPolygon(\@sortedpoints) ;
+		splice @sortedpoints,0,@sortedpoints,@$cvxPoints;
+		$lpts = @sortedpoints ;
+		printf " reduced to %d after convexification\n", $lpts ;
 	} while ($cvx != 0) ;
 	#printPointList(\@sortedpoints,"After convexing",0) ;
+	print "Final $lpts\n" ;
 	makeClosed(\@sortedpoints) ;
 	return @sortedpoints;
 }
@@ -103,10 +133,41 @@ sub notAlreadyIn{
 	return 1 ;
 }
 
+sub verifyConvexPolygon {
+	my $pts = shift ;
+	my $verbose = shift || 0 ;
+	my $cvx = 0 ;
+	if ($verbose) { print "Cross-products:"}
+	for (my $i = 0; $i < @$pts; $i++) {
+		my $pt0 = $$pts[$i] ;
+		my $pt1 = $$pts[($i+1)%@$pts] ;
+		my $pt2 = $$pts[($i+2)%@$pts] ;
+		my $dx1 = ($$pt1[0] - $$pt0[0])*$milesperlat;
+		my $dy1 = ($$pt1[1] - $$pt0[1])*$milesperlong ;
+		my $dx2 = ($$pt2[0] - $$pt1[0])*$milesperlat;
+		my $dy2 = ($$pt2[1] - $$pt1[1])*$milesperlong;
+		my $zcrossproduct =  ($dx1*$dy2 - $dy1*$dx2) ;
+		if ($verbose) { 
+			printf "[(%5g,%5g)",$$pt0[1],$$pt0[0] ; 
+			printf "(%5g,%5g)",$$pt1[1],$$pt1[0] ; 
+			printf "(%5g,%5g)",$$pt2[1],$$pt2[0] ; 
+			printf "(%.4g,%.4g,%.4g,%.4g), ", $dx1,$dy1,$dx2,$dy2 ;
+			printf "%.4g]\n", $zcrossproduct; 
+		}
+		if ($zcrossproduct > -0.00000001) {
+			if ($verbose) { print "non-convex" ; }
+			$cvx++ ;
+		}
+	}
+	if ($verbose) { print "\n" ; }
+	if ($cvx < @$pts) { return 0 ; }
+	else { return 1 ; }
+}
 sub makeConvexPolygon {
 	my $pts = shift ;
+	my $verbose = shift || 0 ;
 	my @skip ;
-	my $cvx = 0 ;
+	my $ncvx = 0 ;
 	for (my $i = 0; $i < @$pts; $i++) {
 		my $pt0 = $$pts[$i] ;
 		my $pt1 = $$pts[($i+1)%@$pts] ;
@@ -116,27 +177,30 @@ sub makeConvexPolygon {
 		my $dx2 = $$pt2[0] - $$pt1[0];
 		my $dy2 = $$pt2[1] - $$pt1[1];
 		my $zcrossproduct =  ($dx1*$dy2 - $dy1*$dx2) ;
-		if ($zcrossproduct > 0) {
+		if ($zcrossproduct > -0.00000001) {
 			$skip[($i+1)%@$pts] = 1 ;
-			#			print "$$pt1[0],$$pt1[1] is non-convex\n" ;
-			$cvx++ ;
+			printf "%s is non-convex (%.4g)\n",ptToGPS($$pt1[1],$$pt1[0]),$zcrossproduct unless ($verbose == 0) ;
+			$ncvx++ ;
 		}
 		else
 		{
+			printf "%s is convex (%.4g)\n",ptToGPS($$pt1[1],$$pt1[0]),$zcrossproduct unless ($verbose == 0) ;
 			$skip[($i+1)%@$pts] = 0 ;
 		}
 	}
-	for (my $i = @$pts-1; $i >= 0; $i--) {
+	my @cplist ;
+	for (my $i = 0; $i < @$pts; $i++) {
 		if ($skip[$i] == 1 ) {
-			#print "Overwriting $i\n" ;
-			for (my $j = $i; $j < @$pts-1; $j++) {
-				$$pts[$j] = $$pts[$j+1] ;
-			}
+			printf "Overwriting %s\n", ptToGPS(${$$pts[$i]}[1],${$$pts[$i]}[0]) unless ($verbose == 0) ;
+		}
+		else {
+			printf "Pushing %s\n", ptToGPS(${$$pts[$i]}[1],${$$pts[$i]}[0]) unless ($verbose == 0) ;
+			push @cplist,$$pts[$i] ;
 		}
 	}
-	splice @$pts,@$pts-$cvx,$cvx ;
+	#splice @$pts,@$pts-$cvx,$cvx ;
 	#	printPointList($pts,"inside convex",0) ;
-	return $cvx ;
+	return (\@cplist,$ncvx) ;
 }
 
 sub makeClosed {

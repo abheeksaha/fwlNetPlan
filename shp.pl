@@ -140,7 +140,7 @@ for (my $i = 0 ; $i<$nxt ; $i++)
 	print "County:$$thisrec{'county'} State:$$thisrec{'state'} CBG:$$thisrec{'cbg'} FIP:$$thisrec{'fid'} $cpts points\n" ; 
 	if ($$thisrec{'county'} eq "") { next ; }
 	next unless (($opt_s eq "") || defined($allowedStates{$$thisrec{'state'}}))  ;
-	#next unless ($$thisrec{'county'} eq "Winston") ;
+	#next unless ($$thisrec{'county'} eq "Waller") ;
 	if ($opt_w && !whiteListed(\@whitelist,$$thisrec{'county'})) {
 		exit(4) ;
 		next ;
@@ -290,15 +290,19 @@ foreach my $cn (sort keys %countydata)
 		my ($bestCluster,$bestClLst) ;
 		my (@tempcl, @tempClLst) ;
 		my @clusterdesc ;
-		if (@threshvals == 0) { push @threshvals, $thresh ; }
+		if (@threshvals == 0) { 
+			$threshvals[0] =  $thresh ; 
+			$threshvals[1] =  $thresh+1 ; 
+		}
 		{
 			print "County $cn: @threshvals\n" ;
 			#exit(1) ;
 		}
 		print "Trying proximity clustering for $thresh, @threshvals!\n" ;
-		for (my $tval=0; $tval < @threshvals; $tval++) {
-			print "Trying Proximity clustering for $cn (scatter=$threshvals[$tval]) \n" ;
-			($tempcl[$tval],$tempClLst[$tval])  = aoiClustersProximity($countydata{$cn}{'aois'},$threshvals[$tval]) ;
+		for (my $tval=$threshvals[0]; $tval < @threshvals[1]+1; $tval++) {
+			print "Trying Proximity clustering for $cn (scatter=$tval) \n" ;
+			($tempcl[$tval],$tempClLst[$tval])  = 
+				aoiClustersProximity($countydata{$cn}{'aois'},$tval) ;
 			my @clist ;
 			my @clusterpoints ;
 			splice @clusterdesc,0,@clusterdesc ;
@@ -343,7 +347,7 @@ foreach my $cn (sort keys %countydata)
 				$bestCluster = $tempcl[$tval] ;
 				$bestClLst = $tempClLst[$tval] ;
 				$bestTwrs = $T2 ;
-				$bestThresh = $threshvals[$tval] ;
+				$bestThresh = $tval ;
 			}
 		}
 		print "Best thresh for county $cn ($nc)= $bestThresh\n" ;
@@ -404,9 +408,6 @@ foreach my $cn (sort keys %countydata)
 		my @plist ;
 		my @hlist ; 
 		my $cliststring = "" ;
-		if ($ct eq "Winston") {
-			print "$newc => @{$countydata{$cn}{'clusterMap'}{$newc}}\n" ;
-		}
 		print "newc = $newc newcn = $newcn\n" ;
 		next if (@clist == 0) ;
 		for my $pk (@clist){
@@ -439,8 +440,14 @@ foreach my $cn (sort keys %countydata)
 		else {
 			$badclusterpoly = Math::Polygon->new(@clusterpoints) ;
 			printf "Area = %.4g for %s county %s\n",$badclusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn ;
-			$clusterpoly = Math::Polygon->new(cvxPolygon::combinePolygonsConvex(\@plist)) ;
-			printf "Area = %.4g for %s county %s (corrected)\n",$clusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn ;
+			my @cvxPoints = cvxPolygon::combinePolygonsConvex(\@plist) ;
+			my $ncvx = @cvxPoints ;
+			print "Convex polygon of $ncvx points\n" ;
+			$clusterpoly = Math::Polygon->new(@cvxPoints) ;
+			printf "Area = %.4g for %s county %s (corrected %d)\n",$clusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn, $clusterpoly->nrPoints ; ;
+			#$clusterpoly = $cvxclusterpoly->simplify() ;
+			#$clusterpoly = $cvxclusterpoly->beautify() ;
+			printf "Area = %.4g for %s county %s (simplified %d points)\n",$clusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn, $clusterpoly->nrPoints ; ;
 		}
 		#printf "Convex operation returns polygon with %d points, closed=%d\n",$clusterpoly->nrPoints(),$clusterpoly->isClosed() ;
 		my %options ;
@@ -451,7 +458,7 @@ foreach my $cn (sort keys %countydata)
 		$cinf{'poly'} = $clusterpoly ;
 		push @{$countydata{$cn}{'clusters'}} , \%cinf ;
 
-		print "Making new cluster from cbglist $cliststring\n" ;
+		#print "Making new cluster from cbglist $cliststring\n" ;
 		my $description = makeNewDescription("Cluster $newcn, county $cn List of CBGs:$cliststring\n") ;
 		my $cstyle ;
 		{
@@ -467,14 +474,14 @@ foreach my $cn (sort keys %countydata)
 				$cname = sprintf("%s/%s", $cn, $newc) ;
 			}
 			foreach my $pmark (@pmarkname) {
-				print "Moving $pmark to newcluster:" ;
+				#print "Moving $pmark to newcluster:" ;
 				my $found = -1 ;
 				FOUND: for (my $fcount=0; $fcount < @placemarks; $fcount++)
 				{
 					my $plmark = $placemarks[$fcount] ;
 					if ($$plmark{'Placemark'}{'name'} eq $pmark) {
 						$found = $fcount ;
-						print "found at $found, " ;
+						#		print "found at $found, " ;
 						#$$plmark{'Placemark'}{'styleUrl'} = $cstyle ;
 						my $pgons = $$plmark{'Placemark'}{'MultiGeometry'}{'AbstractGeometryGroup'} ;
 						#foreach my $pgn (@$pgons) {
@@ -484,7 +491,7 @@ foreach my $cn (sort keys %countydata)
 						splice @consolidatedPolygonList,@consolidatedPolygonList,0, @$pgons ;
 						splice @placemarks, $found,1 ;
 						my $nleft =@placemarks ;
-						print "$nleft left\n" ;
+						#print "$nleft left\n" ;
 						last FOUND;
 					}
 				}
@@ -616,7 +623,7 @@ sub aoiClustersProximity{
 	my $aoisref = shift ;
 	my $thresh = shift ;
 	my @boxes ;
-	print "Thresh = $thresh\nBoxing  " ;
+	print "Thresh = $thresh " ;
 	for (my $aoi=0 ; $aoi < @$aoisref; $aoi++) {
 		my %box ;
 		$box{'id'} = ${$$aoisref[$aoi]}{'name'} ;
@@ -624,18 +631,14 @@ sub aoiClustersProximity{
 		my $cnt = $$poly->centroid ;
 		$box{'centroid'} = $cnt ;
 		$box{'area'} = $$poly->area * $milesperlat * $milesperlong ;
-		print "area=$box{'area'} id=$box{'id'} centroid=@{$box{'centroid'}} " ;
+		#print "area=$box{'area'} id=$box{'id'} centroid=@{$box{'centroid'}} " ;
 		#printf "Polygon of centroid %.4g,%.4g, area %.4g\n", $$cnt[0], $$cnt[1], $$poly->area ;
 		push @boxes,\%box ;
 	}
 	my $nb = @boxes ;
-	print "\nProduced array of size $nb boxes \n" ;
+	print "\tProduced array of size $nb boxes \n" ;
 	my %clusters = proximityCluster::proximityCluster(\@boxes,$thresh) ;
 	my $nc = 0 ;
-	foreach my $cluster_id (sort keys %clusters) {
-		print "\n$cluster_id   =>   @{$clusters{$cluster_id}}\n";
-		$nc++ ;
-	}
 	return \%clusters,$nc ;
 }
 
@@ -750,6 +753,7 @@ sub computeTowersPerAoi {
 	my $listofAois = shift ;
 	my $terrainCode = shift ;
 	my $tdata = shift ;
+	my $verbose = shift ;
 	my %aoiArea ;
 	my %aoiHoleArea ;
 	my %towers;
@@ -770,16 +774,16 @@ sub computeTowersPerAoi {
 			my $tc = $$terrainCode{$$aoi{'name'}} ;
 			my $cellDensity = 68.24  - 0.166*$tc ;
 			my $cellDensity2 = 66.12 - 0.279*$tc ;
-			print "$$aoi{'name'}: Terrain code $tc, celldensity=$cellDensity, celldensity2 = $cellDensity2 " ;
+			print "$$aoi{'name'}: Terrain code $tc, celldensity=$cellDensity, celldensity2 = $cellDensity2 " unless ($verbose == 0) ;
 			if ($cellDensity2 > $cellDensity) { $cellDensity2 = $cellDensity ; }
 			if ($cellDensity == 0 || $cellDensity2 == 0) { die "terrain=$$terrainCode{$$aoi{'name'}} aoi = $$aoi{'name'} density=$cellDensity\n" ; }
-			printf "area=%.4g ",($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}}) ;
+			printf "area=%.4g ",($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}}) unless ($verbose == 0) ;
 			my $aoiTower = ((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity)) ;
 			$towers{$$aoi{'name'}} += $aoiTower ;
 
 			my $aoiTower2 =((($aoiArea{$$aoi{'name'}} - $aoiHoleArea{$$aoi{'name'}})/$cellDensity2)) ;
 			$towers2{$$aoi{'name'}} += $aoiTower2 ;
-			print "aoiTower=$aoiTower aoiTower2=$aoiTower2\n" ;
+			print "aoiTower=$aoiTower aoiTower2=$aoiTower2\n" unless ($verbose == 0) ;
 		}
 	}
 	return (\%aoiArea,\%aoiHoleArea,\%towers,\%towers2,\%fid) ;
