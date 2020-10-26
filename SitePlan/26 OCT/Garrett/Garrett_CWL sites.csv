@@ -1,0 +1,12 @@
+Site Name,Latitude,Longitude,Site Enabled,Device Name,Device Type,Max Power (dBm),Misc Loss (dB),Antenna Type,Mechanical Azimuth (deg),Mechanical Downtilt (deg),Electrical Downtilt (deg),Antenna Height AGL (m),Beamforming Gain (dB),LTE PDSCH Offset (dB),Cell Load (%)
+S22,39.3304469,-79.4763851,true,LTE-ENodeB-1006,Outdoor,47,0,AW3161,8,4,0,60,6,0,50
+new site,39.4853792,-79.1277945,true,New Device 1,Outdoor,47,0,AW3161,108,0,0,60,6,0,50
+new site,39.5802903,-79.4407654,true,New Device 2,Outdoor,47,0,AW3161,171,0,0,90,6,0,50
+new site,39.5802903,-79.4407654,true,New Device 1,Outdoor,47,0,AW3161,320,2,0,90,6,0,50
+new site,39.6581080,-79.2426252,true,New Device 1,Outdoor,47,0,AW3161,-84,2,0,60,0,0,50
+new site,39.6581080,-79.2426252,true,New Device 3,Outdoor,47,0,AW3161,41,0,0,60,0,0,50
+new site,39.6581080,-79.2426252,true,New Device 2,Outdoor,47,0,AW3161,153,2,0,60,0,0,50
+new site,39.5982814,-79.0164185,true,New Device 2,Outdoor,47,0,AW3161,15,0,0,90,6,0,50
+new site (copy),39.7082431,-79.4641113,true,New Device 1,Outdoor,47,0,AW3161,124,2,0,55,0,0,50
+new site (copy),39.5485298,-79.3089294,true,New Device 2,Outdoor,47,0,AW3161,157,0,0,60,6,0,50
+new site (copy),39.5485298,-79.3089294,true,New Device 1,Outdoor,47,0,AW3161,-20,2,0,60,6,0,50
