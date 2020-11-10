@@ -440,7 +440,9 @@ foreach my $cn (sort keys %countydata)
 		else {
 			$badclusterpoly = Math::Polygon->new(@clusterpoints) ;
 			printf "Area = %.4g for %s county %s\n",$badclusterpoly->area()*$milesperlat*$milesperlong, $newc, $cn ;
-			my @cvxPoints = cvxPolygon::combinePolygonsConvex(\@plist) ;
+			my $verbose = 0 ;
+			if ($ct eq "Greenlee") { $verbose = 1 ; }
+			my @cvxPoints = cvxPolygon::combinePolygonsConvex(\@plist,$verbose) ;
 			my $ncvx = @cvxPoints ;
 			print "Convex polygon of $ncvx points\n" ;
 			$clusterpoly = Math::Polygon->new(@cvxPoints) ;

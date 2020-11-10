@@ -86,7 +86,7 @@ sub combinePolygonsConvex{
 		my $pt = $sortedpoints[$j] ;
 		${$pt}[0] += $centx ;${$pt}[1] += $centy;
 	}
-	makeClosed(\@sortedpoints) ;
+	#makeClosed(\@sortedpoints) ;
 	#printPointList(\@sortedpoints,"After sorting",0) ;
 	
 	#Test for convexity
@@ -95,7 +95,7 @@ sub combinePolygonsConvex{
 	my $lpts = @sortedpoints ;
 	print "Started with $lpts\n" ;
 	do {  
-		($cvxPoints,$cvx) = makeConvexPolygon(\@sortedpoints) ;
+		($cvxPoints,$cvx) = makeConvexPolygon(\@sortedpoints,$verbose) ;
 		splice @sortedpoints,0,@sortedpoints,@$cvxPoints;
 		$lpts = @sortedpoints ;
 		printf " reduced to %d after convexification\n", $lpts ;
@@ -154,7 +154,7 @@ sub verifyConvexPolygon {
 			printf "(%.4g,%.4g,%.4g,%.4g), ", $dx1,$dy1,$dx2,$dy2 ;
 			printf "%.4g]\n", $zcrossproduct; 
 		}
-		if ($zcrossproduct > -0.00000001) {
+		if ($zcrossproduct >= 0) {
 			if ($verbose) { print "non-convex" ; }
 			$cvx++ ;
 		}
@@ -177,7 +177,7 @@ sub makeConvexPolygon {
 		my $dx2 = $$pt2[0] - $$pt1[0];
 		my $dy2 = $$pt2[1] - $$pt1[1];
 		my $zcrossproduct =  ($dx1*$dy2 - $dy1*$dx2) ;
-		if ($zcrossproduct > -0.00000001) {
+		if ($zcrossproduct >= 0) {
 			$skip[($i+1)%@$pts] = 1 ;
 			printf "%s is non-convex (%.4g)\n",ptToGPS($$pt1[1],$$pt1[0]),$zcrossproduct unless ($verbose == 0) ;
 			$ncvx++ ;
@@ -208,8 +208,8 @@ sub makeClosed {
 	if ( (${$$polygon[@$polygon - 1]}[0] != ${$$polygon[0]}[0]) ||
 	     (${$$polygon[@$polygon - 1]}[1] != ${$$polygon[0]}[1])){
 		my @newlastpoint ;
-		$newlastpoint[0] = ${$$polygon[0]}[0]; 
-		$newlastpoint[1] = ${$$polygon[0]}[1]; 
+		$newlastpoint[0] = ${$$polygon[0]}[0];
+		$newlastpoint[1] = ${$$polygon[0]}[1];
 		push @$polygon,\@newlastpoint ;
 	}
 }

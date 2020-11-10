@@ -3,6 +3,7 @@ package nlcd;
 
 require Exporter ;
 use Data::Dumper ;
+use Math::Polygon ;
 $Data::Dumper::Indent = 1;
 use strict;
 
@@ -141,7 +142,7 @@ sub readNLCDData {
 	my $xoffset = int(($long - $$fileContainer{'ULXMAP'})/($$fileContainer{'XDIM'})) ;
 	my $yoffset = int(($$fileContainer{'ULYMAP'} - $lat)/($$fileContainer{'YDIM'})) ;
 	#print "$xoffset,$yoffset for $lat,$long\n" ;
-	my $offset = $yoffset*$$fileContainer{'TOTALROWBYTES'} ;
+	my $offset = $yoffset*$$fileContainer{'TOTALROWBYTES'} + $xoffset ;
 	my ($raw,$alt,$dh) ;
 	$dh = ${$$fileContainer{'fh'}} ;
 	seek $dh,$offset,0 ;
